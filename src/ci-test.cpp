@@ -24,8 +24,14 @@ int main() {
         cout << "The result of the sum is " << sum << ". Ha! Can you guess the values?" << endl; 
 
         // Adding syntax error to see if build fails over bamboo
-        int huge = {0,0,0,0}
+        // int huge = {0,0,0,0}
 
+        // Adding for loop and fixing syntax issue
+        int multiply = 1;
+        for (int i = 0; i < sum; i++) {
+            multiply += i * sum;
+        }
+        cout << "The value of the strange multiplication is " << multiply << endl;
 	return 0;
 }
 
