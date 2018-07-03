@@ -1,0 +1,5 @@
+Flask
+Redis
+barnum
+django
+django-tables2
