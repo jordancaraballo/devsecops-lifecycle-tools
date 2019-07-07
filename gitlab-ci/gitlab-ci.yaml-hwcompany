@@ -1,0 +1,29 @@
+# Author: Jordan A Caraballo-Vega <jordancaraballo>
+# Simple pipeline to scan hw-company
+# These are on gitlab-demo machine under /opt/gitlab/embedded/service/gitlab-rails/lib/gitlab/ci/templates/ Jobs OR Security 
+# To include them in the pipeline you will need to reference the job name included in the template
+
+include:
+  - template: Security/License-Management.gitlab-ci.yml
+  - template: Security/Dependency-Scanning.gitlab-ci.yml
+  - template: Jobs/Code-Quality.gitlab-ci.yml - not running becuase of not exposing django application inside container
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/DAST.gitlab-ci.yml
+
+variables:
+  DAST_WEBSITE: http://localhost:8080
+  
+stages:
+  - build
+  - test
+  - dast
+  - deploy
+
+job 1:
+  stage: build
+  script: echo "Hello, this is a pipeline for HW Company"
+  
+job 2:
+  stage: deploy
+  script: echo "All jobs are done."
+
