@@ -1,0 +1,18 @@
+Port Enumeration Scripts
+---------------------------------------------------------
+Name      Port    Service               Script Actions (in addition to Nmap + banner grab)
+=====     ====    ========              ================================================== 
+21.sh     21      FTP                   Nmap scripts
+22.sh     22      SSH                   - 
+23.sh     23      Telnet                Nmap telent brute force
+25.sh     25      SMTP                  smtp-user-enum 
+53.sh     53      DNS                   Nmap DNS recursion scan
+80.sh     80      HTTP                  Nikto + Gobuster
+110.sh    110     POP3                  Nmap POP3 brute force script
+111.sh    111     RPC                   rpcinfo
+139.sh    139     SMB/Netbios           smbclient
+443.sh    443     HTTPS                 Nikto + Gobuster
+445.sh    445     SMB/NetBios           smbclient
+1433.sh   1433    MS SQL                Nmap mssql scripts
+3306.sh   3306    MySQL                 Nmap mysql scripts
+8080.sh   8080    HTTP Proxy            Nikto + Gobuster
