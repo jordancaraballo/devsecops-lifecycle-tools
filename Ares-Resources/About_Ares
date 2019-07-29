@@ -13,14 +13,14 @@ Tools included on Ares:
 
   Port Scanning
   ================================
-	Nmap
+  Nmap
   masscan
   
   Web Scanning
   ================================
   Golismero
-	SQLMap
-	Uniscan
+  SQLMap
+  Uniscan
   nikto
   
 	Compliance Checks
@@ -39,16 +39,16 @@ Tools included on Ares:
   
   Misc.
   ================================
-	cewl	
-	smtp-user-enum
-	smbclient 
-	nano 
-	gcc
-	pip
-	wget
-	curl
-	git
-  
+  cewl	
+  smtp-user-enum
+  smbclient 
+  nano 
+  gcc
+  pip
+  wget
+  curl
+  git
 
 Ares also includes scripts for enumerating various ports. These can be found at /Tools/Port_Scripts/
 Several wordlists are loaded onto Ares. These include lists for usernames, passwords, and directories. These can be found at /Tools/Wordlists/ 
+----------------------------------------------------------------------------------------------------------------------------------------------
