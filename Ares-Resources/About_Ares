@@ -1,6 +1,11 @@
- _______  ______ _______ _______
- |_____| |_____/ |______ |______
- |     | |    \_ |______ ______|
+ █████╗ ██████╗ ███████╗███████╗
+██╔══██╗██╔══██╗██╔════╝██╔════╝
+███████║██████╔╝█████╗  ███████╗
+██╔══██║██╔══██╗██╔══╝  ╚════██║
+██║  ██║██║  ██║███████╗███████║
+╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝
+                                
+ Creator: Christopher Hong | christopher.j.hong@nasa.gov
  
 This container is named Ares. It is a Debian-based docker container that is loaded with security testing tools intended for use within the DevSecOps pipelines. 
 
