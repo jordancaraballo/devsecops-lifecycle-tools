@@ -1,0 +1,49 @@
+ _______  ______ _______ _______
+ |_____| |_____/ |______ |______
+ |     | |    \_ |______ ______|
+ 
+This container is named Ares. It is a Debian-based docker container that is loaded with security testing tools intended for use within the DevSecOps pipelines. 
+
+Tools included on Ares:
+
+  Port Scanning
+  ================================
+	Nmap
+  masscan
+  
+  Web Scanning
+  ================================
+  Golismero
+	SQLMap
+	Uniscan
+  nikto
+  
+	Compliance Checks
+  ================================
+  OpenSCAP + oscap ssh
+  
+	Brute Forcing 
+  ================================
+  hydra
+  gobuster
+  
+  Programming
+  ================================
+  python2.7
+  perl
+  
+  Misc.
+  ================================
+	cewl	
+	smtp-user-enum
+	smbclient 
+	nano 
+	gcc
+	pip
+	wget
+	curl
+	git
+  
+
+Ares also includes scripts for enumerating various ports. These can be found at /Tools/Port_Scripts/
+Several wordlists are loaded onto Ares. These include lists for usernames, passwords, and directories. These can be found at /Tools/Wordlists/ 
