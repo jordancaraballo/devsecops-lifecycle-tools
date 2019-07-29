@@ -1,11 +1,11 @@
- █████╗ ██████╗ ███████╗███████╗
-██╔══██╗██╔══██╗██╔════╝██╔════╝
-███████║██████╔╝█████╗  ███████╗
-██╔══██║██╔══██╗██╔══╝  ╚════██║
-██║  ██║██║  ██║███████╗███████║
-╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝
-                                
- Creator: Christopher Hong | christopher.j.hong@nasa.gov
+
+ █████   ██████   ███████  ███████
+██   ██  ██   ██  ██      ██
+███████  ██████   █████    ███████
+██   ██  ██   ██  ██             ██
+██   ██  ██   ██  ███████  ███████
+
+Creator: Christopher Hong | christopher.j.hong@nasa.gov
  
 This container is named Ares. It is a Debian-based docker container that is loaded with security testing tools intended for use within the DevSecOps pipelines. 
 
@@ -23,11 +23,11 @@ Tools included on Ares:
   Uniscan
   nikto
   
-	Compliance Checks
+  Compliance Checks
   ================================
   OpenSCAP + oscap ssh
   
-	Brute Forcing 
+  Brute Forcing 
   ================================
   hydra
   gobuster
