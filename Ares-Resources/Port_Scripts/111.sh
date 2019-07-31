@@ -47,6 +47,10 @@ if [ $runTest == true ]; then
         echo ""
         echo "----------------------------- RPCInfo Scan ------------------------------------"
         rpcinfo -p $1
+        echo ""
+        rpcinfo $1
+        echo ""
+        rpcinfo -s $1
    else
         echo "Port ${port} closed, no tests to perform."
    fi
