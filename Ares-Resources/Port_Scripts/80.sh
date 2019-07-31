@@ -46,10 +46,10 @@ if [ $runTest == true ]; then
         nmap -sV -p 80 --script=banner $1
         echo ""
         echo "------------------------------ Nikto Scan -------------------------------------"
-        perl /nikto-master/program/nikto.pl -h $1 -port 80
+        perl /Tools/nikto/program/nikto.pl -h $1 -port 80
         echo ""
         echo "------------------------- Gobuster Brute Force --------------------------------"
-        gobuster -t 25 -u http://$1 -w /Wordlists/Dirs-220k.txt
+        gobuster -t 25 -u http://$1 -w /Tools/Wordlists/Directories-220k.txt
    else
         echo "Port ${port} closed, no tests to perform."
    fi
