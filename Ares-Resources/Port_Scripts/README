@@ -4,7 +4,7 @@ Name      Port    Service               Script Actions (in addition to Nmap + ba
 =====     ====    ========              ================================================== 
 21.sh     21      FTP                   Nmap scripts
 22.sh     22      SSH                   - 
-23.sh     23      Telnet                Nmap telent brute force
+23.sh     23      Telnet                Nmap telnet brute force
 25.sh     25      SMTP                  smtp-user-enum 
 53.sh     53      DNS                   Nmap DNS recursion scan
 80.sh     80      HTTP                  Nikto + Gobuster
