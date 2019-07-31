@@ -46,7 +46,7 @@ if [ $runTest == true ]; then
         nmap -sV -p 25 --script=banner $1
         echo ""
         echo "------------------------------ smtp-user-enum ------------------------------------"
-        perl /smtp-user-enum-1.2/smtp-user-enum.pl -U /Wordlists/87kUsers.txt -t $1
+        perl /Tools/smtp-user-enum/smtp-user-enum.pl -U /Tools/Wordlists/Users-87k.txt -t $1
    else
         echo "Port ${port} closed, no tests to perform."
    fi
