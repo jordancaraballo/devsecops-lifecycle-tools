@@ -1,0 +1,695 @@
+# Pipeline Name: black-box-scan
+
+# Author: Chris Hong | christopher.j.hong@nasa.gov
+
+# Use: Given an IP address, scans a system and enumerates on a variety of ports. This pipeline takes a black-box approach to 
+# 	enumerating a system, only being given the IP of the target. The pipeline performs initial recon, scans a number of ports based 
+# 	on the list of open ports, then creates a report based on its findings. 
+
+# Tools Used: 
+#	GoBuster 
+#	Golismero 
+#	Masscan 
+#	Nikto 
+#	Nmap 
+#	Nslookup 
+#	Ping 
+#	rpcinfo 
+#	smbclient 
+#	smtp-user-enum 
+#	Traceroute
+
+# Requirements for pipeline:
+#	1) A running Gitlab instance (on attacking machine)
+#	2) A file named “.gitlab-ci.yml” containing the contents of this file in the master branch of the repository 
+#	3) 2 systems: 1 ATTACKER and 1 TARGET
+#	4) On ATTACKER: 
+#			a) Sufficient processing power + storage to perform pipeline actions
+#			b) Latest version of Docker installed (this pipeline was developed with docker 18.09.7) 
+#			c) Ares Docker image installed/built from Dockerfile
+#			d) Gitlab-Runner configured with at least 3 shell runners registered
+#			e) ping, traceroute, nslookup installed 
+#	5) On TARGET:
+#			a) Network connectivity 
+#	6) The IP address of the TARGET machine must be known, then set in the variables of Gitlab (refer to VARIABLES below)
+#
+#
+# Pipeline Overview:
+#
+#	RECON 
+#		|
+#		|- - - Golismero Scanning
+#		|- - - Ping, Traceroute, Nslookup
+#		|- - - Masscan Port Enumeration
+#
+#	ENUMERATION 
+#		|
+#		|- - - 21 enum
+#		|- - - 22 enum
+#		|- - - 25 enum
+#		|- - - 53 enum
+#		|- - - 80 enum
+#		|- - - 111 enum
+#		|- - - 139 enum
+#		|- - - 443 enum
+#		|- - - 445 enum
+#		|- - - 1433 enum
+#		|- - - 3306 enum
+#		|- - - 8080 enum
+#
+#	REPORT
+#		|
+#		|- - - report
+
+# VARIABLES
+# Make sure following variables are defined (masked + protected) under Settings > CI CD > Variables
+#       
+#	TARGET_IP = IP of system being scanned. 
+
+# Stage summary: 
+#		  Recon: Scan the target for low-hanging fruit and open ports
+#                Enumeration: Uses the list of open ports on the target to scan various services on the target machine
+#                Report: Concatenates the reports from all previous stages into one 
+
+stages:
+    - Recon
+    - Enumeration
+    - Report
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#--------------------------------------------------------------------RECON--------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The recon stage is meant to determine a baseline of information about the target system. 
+
+# It has 3 jobs - 
+#		1) Golismero Scanning
+#		2) Ping, Traceroute, Nslookup 
+#		3) Masscan Port Enumeration
+
+
+#----------------------------------------------------------Golismero Scanning----------------------------------------------------------------------------
+# Golismero is a tool used for scanning a system. Uses nikto and nmap alongside its own tools in order to enumerate the target system. 
+
+# What this job does- 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses Golismero against the TARGET IP 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+golismero_scanning:
+    stage: Recon
+    tags: 
+        - nmap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Golismero Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "golismero ${TARGET_IP} -o golismero_Results.txt > /dev/null 2>&1 && cat golismero_Results.txt" | tee golismero_Results.txt
+    artifacts:
+        paths:
+            - golismero_Results.txt    
+
+
+
+#----------------------------------------------------------Ping, Traceroute, Nslookup----------------------------------------------------------------------------
+# This job runs ping, traceroute, and nslookup against the target to gain basic connectivity information. 
+
+# What this job does - 
+#		1) Runs as root
+#		2) Runs ping against target
+#		3) Runs traceroute against target
+#		4) Runs nslookup against target
+#		5) Places results into txt file for report at the end of the pipeline 
+
+pingTracerouteNslookup:
+    stage: Recon
+    tags: 
+        - uniscan
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Pinging Target [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Ping Result +++++++" > pingTraceRouteNslookup_Results.txt
+        - ping -c 8 $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+        - echo " " >> pingTraceRouteNslookup_Results.txt
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Running Trace Route [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Traceroute Result +++++++" >> pingTraceRouteNslookup_Results.txt
+        - traceroute $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+        - echo " " >> pingTraceRouteNslookup_Results.txt
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] NsLookup [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Nslookup Result +++++++" >> pingTraceRouteNslookup_Results.txt
+        - nslookup $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+    artifacts:
+        paths:
+            - pingTraceRouteNslookup_Results.txt
+
+
+
+#----------------------------------------------------------Masscan Port Enumeration----------------------------------------------------------------------------
+# Masscan is a very fast port scanner that is able to get all open ports on a system quickly. This job’s results are used in the next stage in order to determine 
+#	which ports to run scans against. 
+
+# What this job does - 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses masscan against the TARGET IP 
+#		3) Saves results into file, then strips all information except for port numbers. This allows later jobs to easily identify their port in the list. 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+masscan_scanning:
+    stage: Recon
+    tags: 
+        - openscap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Masscan Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "masscan -oL report.txt --ports 0-65535 ${TARGET_IP} --rate 25000 && sed -i -e 's/\(#masscan\|open tcp \| ${TARGET_IP}.*\|# end\)//g' report.txt && cat report.txt" | tee masscan_Results.txt
+    artifacts:
+        paths:
+            - masscan_Results.txt  
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#--------------------------------------------------------------PORT ENUMERATION---------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The port enumeration stage relies on the mass can results from the recon stage. All jobs trigger regardless of if the port is open, but 
+#	logic within the script on the Ares container determines the action. Each port script reads through the results of masscan, and then does 1 of 2 actions:
+
+#		1) If the script’s port number is NOT in the masscan results, then the script indicates that its port is closed on its results. 
+#		2) If the script’s port number IS in the masscan results, then the script executes an nmap -sV -p against the port + banner grab + other specific actions depending on the service. 
+
+# All jobs are the same logic, just different numbers for their ports, which correspond to their port script on Ares. 
+#
+#	Port scripts can be found on Ares under /Tools/Port_Scripts/   
+
+
+# Below is a generic port job. The following jobs follow this template, just change the port number depending on their port 
+
+# What each job does - 
+#		1) Runs as root (some scripts need root privileges)
+#		2) Creates the txt file for the results
+#		3) Copies the contents of the masscan results into a file 
+#		4) Ares is run, the directory with the copied masscan results is mounted into the container, and the script for the port is run. 
+#		5) Results are passed as artifact, which will be used in the report stage.   
+
+#PORT_enum:
+#    stage: Enumeration
+#    tags: 
+#        - shell
+#    retry: 
+#        max: 2
+#        when: 
+#            - always
+#    script:
+#        - sudo -s | echo $PASSWORD
+#        - BLUE='\033[1;34m'
+#        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SERVICE Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+#        - touch PORT_enum_Results.txt 
+#        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+#        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /port-scripts && ./PORT.sh ${TARGET_IP}" | tee PORT_enum_Results.txt
+#    artifacts:
+#        paths:
+#            - PORT_enum_Results.txt
+
+
+
+#----------------------------------------------------------21 (FTP) Port Enumeration-------------------------------------------------------------------------
+21_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] FTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 21_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./21.sh ${TARGET_IP}" | tee 21_enum_Results.txt
+    artifacts:
+        paths:
+            - 21_enum_Results.txt 
+
+
+
+#----------------------------------------------------------22 (SSH) Port Enumeration-------------------------------------------------------------------------
+22_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SSH Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 22_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./22.sh ${TARGET_IP}" | tee 22_enum_Results.txt
+    artifacts:
+        paths:
+            - 22_enum_Results.txt  
+
+
+#---------------------------------------------------------23 (Telnet) Port Enumeration-------------------------------------------------------------------------
+23_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Telnet Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 23_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./23.sh ${TARGET_IP}" | tee 23_enum_Results.txt
+    artifacts:
+        paths:
+            - 23_enum_Results.txt  
+            
+
+#---------------------------------------------------------25 (SMTP) Port Enumeration-------------------------------------------------------------------------
+25_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SMTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 25_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./25.sh ${TARGET_IP}" | tee 25_enum_Results.txt
+    artifacts:
+        paths:
+            - 25_enum_Results.txt  
+
+ 
+ 
+#----------------------------------------------------------53 (DNS) Port Enumeration-------------------------------------------------------------------------
+53_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] DNS Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 53_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./53.sh ${TARGET_IP}" | tee 53_enum_Results.txt
+    artifacts:
+        paths:
+            - 53_enum_Results.txt
+            
+
+#----------------------------------------------------------80 (HTTP) Port Enumeration------------------------------------------------------------------------
+80_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] HTTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 80_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./80.sh ${TARGET_IP}" | tee 80_enum_Results.txt
+    artifacts:
+        paths:
+            - 80_enum_Results.txt  
+
+
+#---------------------------------------------------------110 (POP3) Port Enumeration------------------------------------------------------------------------
+110_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 110 (POP3) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 110_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./110.sh ${TARGET_IP}" | tee 110_enum_Results.txt
+    artifacts:
+        paths:
+            - 110_enum_Results.txt
+
+
+#---------------------------------------------------------111 (RPC) Port Enumeration------------------------------------------------------------------------
+111_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 111 (RPC) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 111_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./111.sh ${TARGET_IP}" | tee 111_enum_Results.txt
+    artifacts:
+        paths:
+            - 111_enum_Results.txt
+
+
+#--------------------------------------------------------139 (SMB) Port Enumeration-------------------------------------------------------------------------
+139_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 139 (SMB) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 139_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./139.sh ${TARGET_IP}" | tee 139_enum_Results.txt
+    artifacts:
+        paths:
+            - 139_enum_Results.txt
+
+
+#----------------------------------------------------------443 (HTTPS) Port Enumeration----------------------------------------------------------------------
+443_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] HTTPS Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 443_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./443.sh ${TARGET_IP}" | tee 443_enum_Results.txt
+    artifacts:
+        paths:
+            - 443_enum_Results.txt 
+            
+            
+#----------------------------------------------------------445 (SMB) Port Enumeration----------------------------------------------------------------------
+445_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SMB Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 445_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./445.sh ${TARGET_IP}" | tee 445_enum_Results.txt
+    artifacts:
+        paths:
+            - 445_enum_Results.txt 
+
+
+#----------------------------------------------------------1433 (mssql) Port Enumeration-------------------------------------------------------------------------
+1433_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] MSSQL Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 1433_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./1433.sh ${TARGET_IP}" | tee 1433_enum_Results.txt
+    artifacts:
+        paths:
+            - 1433_enum_Results.txt 
+
+
+#-------------------------------------------------------3306 (MySQL) Port Enumeration------------------------------------------------------------------------
+3306_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 3306 (MySQL) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 3306_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./3306.sh ${TARGET_IP}" | tee 3306_enum_Results.txt
+    artifacts:
+        paths:
+            - 3306_enum_Results.txt
+
+
+#----------------------------------------------------------Port 8080 Enumeration----------------------------------------------------------------------------
+8080_enum:
+    stage: Enumeration
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Port 8080 Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch 8080_enum_Results.txt 
+        - cat masscan_Results.txt > /home/cjhong/masscan_Results/ports.txt
+        - docker run -v /home/cjhong/masscan_Results:/tmp -i ares sh -c "cd /Tools/Port_Scripts && ./8080.sh ${TARGET_IP}" | tee 8080_enum_Results.txt
+    artifacts:
+        paths:
+            - 8080_enum_Results.txt  
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#------------------------------------------------------------------ REPORT -------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Report stage creates a report based on the artifacts passed from the other stages and jobs. 
+
+# What this job does - 
+#		1) Runs as root (non-root runners cannot transmit artifacts)
+#		2) Stops and removes all running ares container instances 
+#		3) Creates a well formatted report based on the artifacts from prior jobs 
+#		4) Appends ports that were not scanned into the report 
+
+
+report:
+    stage: Report
+    tags:
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD
+        - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker stop {}
+        - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker rm {}
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Generating Report [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" > pipeline_Report.txt
+        - echo "||||||||||||||||||||||||||||||||||||||||||||||||| System Scan Results |||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+        - echo "Report generated on " >> pipeline_Report.txt
+        - echo `date` >> pipeline_Report.txt
+        - echo "Target IP - " >> pipeline_Report.txt
+        - echo $TARGET_IP >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< RECON STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<<<<<<<<<------------ Ping, Traceroute, Nslookup Results ------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat pingTraceRouteNslookup_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<<<<<<<<<--------------- Masscan Full Port Discovery ----------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo "-- Open Ports --" >> pipeline_Report.txt 
+        - cat masscan_Results.txt | tee -a pipeline_Report.txt
+        - echo "----------------" >> pipeline_Report.txt 
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<------------------- GoLismero Enumeration ------------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat golismero_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< PORT SCANNING STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 21 (FTP) >>>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 21_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 22 (SSH) >>>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 22_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<< Port 23 (Telnet) >>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 23_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 25 (SMTP) >>>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 25_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 53 (DNS) >>>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 53_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 80 (HTTP) >>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 80_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==---------------------------------<<<<<<<<<<<<<<<< Port 110 (POP3) >>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 110_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 111 (RPC) >>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 111_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 139 (SMB) >>>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 139_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<<< Port 443 (HTTPS) >>>>>>>>>>>>>>>>---------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 443_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt   
+        - echo "<<==-----------------------------------<<<<<<<<<<<<<<<< Port 445 (SMB) >>>>>>>>>>>>>>>>----------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 445_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<< Port 1433 (MSSQL) >>>>>>>>>>>>>>>>---------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 1433_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<==----------------------------------<<<<<<<<<<<<<<< Port 3306 (MySQL) >>>>>>>>>>>>>>>>---------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 3306_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<==-------------------------------------<<<<<<<<<<<<<<<< Port 8080 >>>>>>>>>>>>>>>>-------------------------------------==>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat 8080_enum_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "[!] -- [!] -- [!] -- [!] -- [!] -- [!] -- [!] == [!] Remaining Ports [!] -- [!] -- [!] -- [!] -- [!] -- [!] -- [!] -- [!]" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - touch remaining_ports.txt 
+        - echo "Remaining ports, enumerate these further. " > remaining_ports.txt
+        - cat masscan_Results.txt | tee -a remaining_ports.txt
+        - sed -i '/\<21\>/d' remaining_ports.txt
+        - sed -i '/\<22\>/d' remaining_ports.txt
+        - sed -i '/\<23\>/d' remaining_ports.txt
+        - sed -i '/\<25\>/d' remaining_ports.txt
+        - sed -i '/\<53\>/d' remaining_ports.txt
+        - sed -i '/\<80\>/d' remaining_ports.txt
+        - sed -i '/\<111\>/d' remaining_ports.txt
+        - sed -i '/\<110\>/d' remaining_ports.txt
+        - sed -i '/\<139\>/d' remaining_ports.txt
+        - sed -i '/\<443\>/d' remaining_ports.txt
+        - sed -i '/\<445\>/d' remaining_ports.txt
+        - sed -i '/\<1433\>/d' remaining_ports.txt
+        - sed -i '/\<3306\>/d' remaining_ports.txt
+        - sed -i '/\<8080\>/d' remaining_ports.txt
+        - cat remaining_ports.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" >> pipeline_Report.txt
+        - echo "||||||||||||||||||||||||||||||||||||||||||||||||||||| End of Results ||||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+# This part removes lines that would clog up the report with redundant information
+        - sed -i '/Host is up /d' pipeline_Report.txt
+        - sed -i '/Nmap done /d' pipeline_Report.txt
+        - sed -i '/Service detection performed. Please report any incorrect results/d' pipeline_Report.txt
+        - sed -i '/Starting Nmap /d' pipeline_Report.txt
+        - sed -i '/Remaining tests:/d' pipeline_Report.txt
+        - sed -i '/Threads:/d' pipeline_Report.txt
+# Renames report to specify its pipeline of origin
+        - mv pipeline_Report.txt Black-Box-Scan_pipeline_Report.txt
+    artifacts:
+        paths:
+            - Black-Box-Scan_pipeline_Report.txt
