@@ -40,7 +40,7 @@ if [[ " ${ports[*]} " == *" 23 "* ]]; then
 if [ $runTest == true ]; then
         echo "Enumerating port ${port}"
         echo "------------------------------- Nmap Scan -------------------------------------"
-        nmap -p 23 --script telnet-brute --script-args userdb=/Wordlists/Users-87k.txt,passdb=/Wordlists/Passwords-100k.txt,telnet-brute.timeout=8s $1
+        nmap -p 23 --script telnet-brute --script-args userdb=/Tools/Wordlists/Users-87k.txt,passdb=/Tools/Wordlists/Passwords-100k.txt,telnet-brute.timeout=8s $1
         echo ""
         echo "------------------------------ Banner Grab ------------------------------------"
         nmap -sV -p 23 --script=banner $1
