@@ -1,0 +1,46 @@
+FROM debian:latest
+MAINTAINER Christopher Hong (christopher.j.hong@nasa.gov)
+
+RUN apt-get update
+RUN yes | apt-get install sudo 
+RUN yes | apt-get install nano
+RUN yes | apt-get install nmap
+RUN yes | apt-get install gobuster
+RUN yes | apt-get install hydra
+RUN yes | apt-get install sqlmap
+RUN yes | apt-get install masscan
+RUN yes | apt-get install cewl
+RUN yes | apt-get install libopenscap8
+RUN yes | apt-get install smbclient
+RUN yes | sudo apt-get autoclean
+RUN yes | apt-get install curl
+RUN yes | apt-get install rpcbind
+RUN yes | apt-get install python2.7 python2.7-dev python-pip python-docutils git perl nmap
+RUN cd / && mkdir Tools
+RUN cd /Tools && git clone https://github.com/sullo/nikto.git
+RUN cd /Tools && git clone https://github.com/poerschke/Uniscan.git
+RUN cd /Tools && git clone https://github.com/mpreisler/oscap-ssh.git
+RUN cd /opt && git clone https://github.com/golismero/golismero.git 
+RUN pip install -r /opt/golismero/requirements.txt
+RUN pip install -r /opt/golismero/requirements_unix.txt
+RUN ln -s /opt/golismero/golismero.py /usr/bin/golismero
+RUN cd /Tools && wget http://pentestmonkey.net/tools/smtp-user-enum/smtp-user-enum-1.2.tar.gz && tar -xvzf smtp-user-enum-1.2.tar.gz
+RUN cd /Tools && mv smtp-user-enum-1.2 smtp-user-enum 
+RUN cd /Tools && rm smtp-user-enum-1.2.tar.gz
+RUN cd /Tools && git clone https://github.com/jordancaraballo/devsecops-lifecycle-tools.git
+RUN mv /Tools/devsecops-lifecycle-tools/Ares-Resources/Wordlists /Tools/
+RUN mv /Tools/devsecops-lifecycle-tools/Ares-Resources/Port_Scripts/ /Tools/
+RUN cat /Tools/devsecops-lifecycle-tools/Ares-Resources/.bashrc > /root/.bashrc
+RUN touch About_Ares
+RUN cd /Tools && touch About_Ares
+RUN cat /Tools/devsecops-lifecycle-tools/Ares-Resources/About_Ares > About_Ares
+RUN cd /Tools && cat /Tools/devsecops-lifecycle-tools/Ares-Resources/About_Ares > About_Ares
+RUN chmod -R +x /Tools/Port_Scripts/
+RUN yes | rm -R /Tools/devsecops-lifecycle-tools/ 
+
+RUN set -x \
+    && apt-get -yqq update \
+    && apt-get -yqq dist-upgrade \
+    && apt-get clean
+
+CMD ["bash"]
