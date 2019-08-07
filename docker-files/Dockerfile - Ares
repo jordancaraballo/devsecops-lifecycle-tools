@@ -1,7 +1,20 @@
+# ARES
+# Use: This is a Dockerfile to create Ares: a Debian-based Docker image designed to be used in CI/CD pipelines
+# This file, when run, will build the image, which can then be run as a container. 
+# Last updated: 8/7/2019
+
+# This dockerfile updates the packages, installs multiple tools with apt-get, then installs tools from 
+#       github that are not available via apt-get. Finally, there it pulls from a repository created for 
+#       this pipeline that contains scripts for enumerating ports, as well as wordlists. 
+
 FROM debian:latest
 MAINTAINER Christopher Hong (christopher.j.hong@nasa.gov)
 
+# I) UPDATE
 RUN apt-get update
+
+# II) INSTALL TOOLS
+# 1) Install tools with apt-get
 RUN yes | apt-get install sudo 
 RUN yes | apt-get install nano
 RUN yes | apt-get install nmap
@@ -12,11 +25,15 @@ RUN yes | apt-get install masscan
 RUN yes | apt-get install cewl
 RUN yes | apt-get install libopenscap8
 RUN yes | apt-get install smbclient
-RUN yes | sudo apt-get autoclean
 RUN yes | apt-get install curl
 RUN yes | apt-get install rpcbind
 RUN yes | apt-get install python2.7 python2.7-dev python-pip python-docutils git perl nmap
+
+# 2) If tool is not available via apt-get, install from github
+# a) Create Tools directory to put cloned tools into
 RUN cd / && mkdir Tools
+
+# b) Git clone and set up tools
 RUN cd /Tools && git clone https://github.com/sullo/nikto.git
 RUN cd /Tools && git clone https://github.com/poerschke/Uniscan.git
 RUN cd /Tools && git clone https://github.com/mpreisler/oscap-ssh.git
@@ -27,17 +44,33 @@ RUN ln -s /opt/golismero/golismero.py /usr/bin/golismero
 RUN cd /Tools && wget http://pentestmonkey.net/tools/smtp-user-enum/smtp-user-enum-1.2.tar.gz && tar -xvzf smtp-user-enum-1.2.tar.gz
 RUN cd /Tools && mv smtp-user-enum-1.2 smtp-user-enum 
 RUN cd /Tools && rm smtp-user-enum-1.2.tar.gz
+
+# III) CLONE RESOURCES FROM GIT REPO
+# 1) Clone repo
 RUN cd /Tools && git clone https://github.com/jordancaraballo/devsecops-lifecycle-tools.git
+
+# 2) Extract wordlists
 RUN mv /Tools/devsecops-lifecycle-tools/Ares-Resources/Wordlists /Tools/
+
+# 3) Extract port scripts
 RUN mv /Tools/devsecops-lifecycle-tools/Ares-Resources/Port_Scripts/ /Tools/
+
+# 4) Write content of .bashrc into /root/.bashrc
 RUN cat /Tools/devsecops-lifecycle-tools/Ares-Resources/.bashrc > /root/.bashrc
+
+# 5) Create About Ares files + save content into them
 RUN touch About_Ares
 RUN cd /Tools && touch About_Ares
 RUN cat /Tools/devsecops-lifecycle-tools/Ares-Resources/About_Ares > About_Ares
 RUN cd /Tools && cat /Tools/devsecops-lifecycle-tools/Ares-Resources/About_Ares > About_Ares
+
+# 6) Give port scripts execute permission
 RUN chmod -R +x /Tools/Port_Scripts/
+
+# 7) Remove extra content from repo
 RUN yes | rm -R /Tools/devsecops-lifecycle-tools/ 
 
+# 8) Perform final actions
 RUN set -x \
     && apt-get -yqq update \
     && apt-get -yqq dist-upgrade \
