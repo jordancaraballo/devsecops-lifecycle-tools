@@ -1,0 +1,456 @@
+# Pipeline Name: white-box-scan
+
+# Author: Chris Hong | christopher.j.hong@nasa.gov
+
+# Use: Given an IP address, scans a system for open ports, vulnerabilities, compliance, and web information. This pipeline takes a white/grey-box approach to 
+# 	enumerating a system, knowing the IP, knowing that a web application is running on the target, and having OpenSCAP on the target in order to perform compliance checks over SSH. 
+#	The pipeline performs initial recon, scans the target for vulnerabilities with Nmap scripts, performs compliance checks, scans the web interface, then creates a report based on its findings. 
+
+# NOTE: This pipeline is meant to be customized to fit the stature of a target system. The use case for this specific pipeline is a system with a web-app, but other targets may have different 
+#	services running on them. Adjust accordingly. 
+ 
+# Tools Used: 
+#	GoBuster 
+#	Golismero 
+#	Masscan 
+#	Nikto 
+#	Nmap 
+#	Nslookup 
+#	OpenSCAP
+#	Ping 
+#	Traceroute
+#	Uniscan
+
+# Requirements for pipeline:
+#	1) A running Gitlab instance (on attacking machine)
+#	2) A file named “.gitlab-ci.yml” containing the contents of this file in the master branch of the repository 
+#	3) 2 systems: 1 ATTACKER and 1 TARGET
+#	4) On ATTACKER: 
+#			a) Sufficient processing power + storage to perform pipeline actions
+#			b) Latest version of Docker installed (this pipeline was developed with docker 18.09.7) 
+#			c) Ares Docker image installed/built from Dockerfile 
+#			d) Gitlab-Runner configured with at least 3 shell runners registered
+#			e) ping, traceroute, nslookup, OpenSCAP + oscapssh, nmap + vulscan scripts,  installed 
+#	5) On TARGET:
+#			a) Network connectivity 
+#			b) OpenSCAP installed
+#	6) The IP address of the TARGET machine must be known, then set in the variables of Gitlab (refer to VARIABLES below)
+#
+#
+# Pipeline Overview:
+#
+#	RECON 
+#		|
+#		|- - - Golismero Scanning
+#		|- - - Ping, Traceroute, Nslookup
+#		|- - - Masscan Port Enumeration
+#
+#	VULNERABILITY_SCANNING
+#		|
+#		|- - - nmap_vuln_scanning
+#
+#	COMPLIANCE_CHECKS
+#		|
+#		|- - - openscap_scanning
+#
+#	WEB_SCANNING
+#		|
+#		|- - - gobuster_bruteforce
+#		|- - - nikto_scan
+#		|- - - uniscan_scanning
+#
+#	REPORT
+#		|
+#		|- - - report
+
+# VARIABLES
+# Make sure the following variables are defined (masked + protected) under Settings > CI CD > Variables
+#       
+#	TARGET_IP = IP of system being scanned. 
+#   PASSWORD = Root password of ATTACKER system. Jobs must run as root in order to pass artifacts to later stages. 
+
+# Stage summary: 
+#		  Recon: Scan the target for low-hanging fruit and open ports
+#         Vulnerability_Scanning: Uses Nmap with Vulscan scripts to identify vulnerabilities on the target  
+#		  Compliance_Checks: Uses oscapssh on the ATTACKER to connect to OpenSCAP on the TARGET, then checks for compliance
+#		  Web_Scanning: Enumerates web vulnerabilities and directories
+#         Report: Concatenates the reports from all previous stages into one 
+
+stages:
+    - Recon
+    - Vulnerability_Scanning
+    - Compliance_Checks
+    - Web_Scanning
+    - Report
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#--------------------------------------------------------------------RECON--------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The recon stage performs basic enumeration on the target. This provides a good initial view of the system as a whole
+#
+# It has 3 jobs - 
+#		1) Golismero Scanning
+#		2) Ping, Traceroute, Nslookup 
+#		3) Masscan Port Enumeration
+
+
+#----------------------------------------------------------GoLismero Scanning----------------------------------------------------------------------------
+# Golismero is a tool used for scanning a system. Uses nikto and nmap alongside its own tools in order to enumerate the target system. 
+
+# What this job does- 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses Golismero against the TARGET IP 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+golismero_scanning:
+    stage: Recon
+    tags: 
+        - nmap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Golismero Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "golismero ${TARGET_IP} -o golismero_Results.txt > /dev/null 2>&1 && cat golismero_Results.txt" | tee golismero_Results.txt
+    artifacts:
+        paths:
+            - golismero_Results.txt    
+
+
+
+#----------------------------------------------------------Ping, Traceroute, Nslookup----------------------------------------------------------------------------
+# This job runs ping, traceroute, and nslookup against the target to gain basic connectivity information. 
+
+# What this job does - 
+#		1) Runs as root
+#		2) Runs ping against target
+#		3) Runs traceroute against target
+#		4) Runs nslookup against target
+#		5) Places results into txt file for report at the end of the pipeline 
+
+pingTracerouteNslookup:
+    stage: Recon
+    tags: 
+        - uniscan
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Pinging Target [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Ping Result +++++++" > pingTraceRouteNslookup_Results.txt
+        - ping -c 8 $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+        - echo " " >> pingTraceRouteNslookup_Results.txt
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Running Trace Route [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Traceroute Result +++++++" >> pingTraceRouteNslookup_Results.txt
+        - traceroute $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+        - echo " " >> pingTraceRouteNslookup_Results.txt
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] NsLookup [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "+++++++ Nslookup Result +++++++" >> pingTraceRouteNslookup_Results.txt
+        - nslookup $TARGET_IP | tee -a pingTraceRouteNslookup_Results.txt
+    artifacts:
+        paths:
+            - pingTraceRouteNslookup_Results.txt
+
+
+
+#----------------------------------------------------------Masscan Port Enumeration----------------------------------------------------------------------------
+# Masscan is a very fast port scanner that is able to get all open ports on a system quickly. 
+
+# What this job does - 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses masscan against the TARGET IP 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+masscan_scanning:
+    stage: Recon
+    tags: 
+        - openscap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Masscan Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "masscan --ports 0-65535 ${TARGET_IP} --rate 25000" | tee masscan_Results.txt
+    artifacts:
+        paths:
+            - masscan_Results.txt  
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#========================================================================================================================================================= 
+#-------------------------------------------------------VULNERABILITY SCANNING---------------------------------------------------------------------------- 
+#=========================================================================================================================================================
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The vulnerability scanning stage uses nmap and vulscan to scan a target for vulnerabilities on its ports. 
+
+#----------------------------------------------------------Nmap Vulnerability Scan-------------------------------------------------------------------------------        
+# What this job does - 
+#			1) Runs as root (must be root to pass artifacts) 
+#			2) Runs nmap with Vulscan scripts against the target
+#			3) Places results into a txt file for report at the end of the pipeline 
+
+nmap_vuln_scan:
+    stage: Vulnerability_Scanning
+    tags:
+        - nmap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Nmap Vulnerability Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - nmap -sV --script=vulscan/scipag_vulscan/vulscan.nse $TARGET_IP | tee vulnScan_Results.txt
+    artifacts:
+        paths:
+            - vulnScan_Results.txt
+
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#-----------------------------------------------------------COMPLIANCE CHECKS-----------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The compliance checks stage uses oscapssh on the ATTACKER machine to create an SSH connection to the TARGET, where OpenSCAP is run. This checks compliance standards on the target.  
+
+#----------------------------------------------------------OpenSCAP-------------------------------------------------------------------------------        
+# What this job does - 
+#			1) Runs as root (must be root to pass artifacts) 
+#			2) Sets a variable equal to the IP of the target for oscapssh to use 
+#			3) Runs oscapssh with standard compliance checks over ssh against the target 
+#			4) Places results into a txt file for report at the end of the pipeline 
+
+openscap_scanning:
+    stage: Compliance_Checks
+    tags:
+        - openscap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] OpenSCAP Checks [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - var=$( cat /var/lib/gitlab-data/jira-bamboo-system.txt )
+        - oscap-ssh root@${var} 22 xccdf eval --profile xccdf_org.ssgproject.content_profile_standard --report result.html /usr/share/xml/scap/ssg/content/ssg-centos7-ds.xml | tee oscap_Results.txt || true
+    artifacts:
+        paths:
+            - oscap_Results.txt    
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#-------------------------------------------------------------WEB SCANNING--------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Web scanning is the stage dedicated to enumerating the target system’s web application/web page. 
+#
+# It has 3 jobs - 
+#		1) Gobuster scan
+#		2) Nikto scan
+#		3) Uniscan scanning
+
+#----------------------------------------------------------Gobuster Scan-------------------------------------------------------------------------------        
+# Gobuster is a directory brute-forcing tool that uses a wordlist to check response codes from a webpage. It helps uncover potentially hidden files.
+#
+# What this job does - 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses gobuster against the TARGET IP with a list of 220,000 directories 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+gobuster_bruteforce:
+    stage: Web_Scanning
+    tags:
+        - gobuster
+    retry: 
+        max: 2
+        when: 
+            - always
+    variables:
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Brute Forcing Directories [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "gobuster -u http://${TARGET_IP} -w /Tools/Wordlists/Dirs-220k.txt" | tee gobuster_Results.txt
+    artifacts:
+        paths:
+            - gobuster_Results.txt
+
+#----------------------------------------------------------Nikto Scan-------------------------------------------------------------------------------        
+# Nikto is a web-server scanner that uses tests for various vulnerabilities and CVEs 
+
+# What this job does - 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses nikto against the TARGET IP 
+#		3) Places results into txt file for report at the end of the pipeline 
+
+nikto_scan:
+    stage: Web_Scanning
+    tags:
+        - nikto
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Scanning With Nikto [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "perl /Tools/nikto/program/nikto.pl -h $1 -port 80" | tee nikto_Results.txt
+    artifacts:
+        paths:
+            - nikto_Results.txt
+            
+            
+
+#----------------------------------------------------------Uniscan Scanning----------------------------------------------------------------------------
+# Uniscan is a web vulnerability scanner that can scan for LFI, RFI, stress testing, Directories, and many other checks. 
+
+# What this job does - 
+#		1) Runs as root (must be root to use Docker)
+#		2) Runs Ares container and uses uniscan against the TARGET IP using tests:
+#							-e = Enable robots.txt and sitemap.xml check
+#							-d = Enable Dynamic checks
+#							-s = Enable Static checks
+#							-r = Enable Stress checks
+#							-g = Web fingerprint
+#							-j = Server fingerprint
+#		3) Places results into txt file for report at the end of the pipeline 
+
+uniscan_scanning:
+    stage: Web_Scanning
+    tags: 
+        - uniscan
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Uniscan Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "cd Uniscan && perl uniscan.pl -u http://169.154.148.50:80/ -e -d -s -r -g -j" | tee uniscan_Results.txt
+    artifacts:
+        paths:
+            - uniscan_Results.txt       
+        
+            
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#-----------------------------------------------------------------REPORT----------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Report stage creates a report based on the artifacts passed from the other stages and jobs. 
+#
+# What this job does - 
+#		1) Runs as root (non-root runners cannot transmit artifacts)
+#		2) Stops and removes all running ares container instances 
+#		3) Creates a well formatted report based on the artifacts from prior jobs  
+
+#----------------------------------------------------------Report-------------------------------------------------------------------------------        
+# Combines the results of all jobs into one report, as well as stops the running ares containers. 
+
+report:
+    stage: Report
+    tags:
+        - nmap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker stop {}
+        - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker rm {}
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Generating Report [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" > pipeline_Report.txt
+        - echo "||||||||||||||||||||||||||||||||||||||||||||||||| System Scan Results |||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+        - echo "Report generated on -" >> pipeline_Report.txt
+        - echo `date` >> pipeline_Report.txt
+        - echo "Target IP -" >> pipeline_Report.txt
+        - echo $TARGET_IP >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< RECON STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<<<<<<<<<------------ Ping, Traceroute, Nslookup Results ------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat pingTraceRouteNslookup_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<<<<<<<<<--------------- Masscan Full Port Discovery ---------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat masscan_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<------------------ GoLismero Enumeration ------------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat golismero_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< VULNERABILITY SCANNING STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<--------------- Nmap Vulnerability Scanning ---------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat vulnScan_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< COMPLIANCE CHECKS STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<--------------- OpenSCAP Compliance Scanning ---------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt        
+        - cat oscap_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt        
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< WEB SCANNING STAGE >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" >> pipeline_Report.txt
+        - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<--------------------- Uniscan Report ---------------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat uniscan_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<-------------------- Nikto Scan Report -------------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat nikto_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<-------------- GoBuster Brute Force Results --------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat gobuster_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" >> pipeline_Report.txt
+        - echo "||||||||||||||||||||||||||||||||||||||||||||||||||||| End of Results ||||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+        - sed -i '/Remaining tests:/d' pipeline_Report.txt
+        - sed -i '/Threads:/d' pipeline_Report.txt
+    artifacts:
+        paths:
+            - pipeline_Report.txt
