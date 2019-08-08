@@ -65,6 +65,7 @@
 # Make sure following variables are defined (masked + protected) under Settings > CI CD > Variables
 #       
 #	TARGET_IP = IP of system being scanned. 
+#   PASSWORD = Root password of ATTACKING system. This allows jobs to run as root and pass artifacts. 
 
 # Stage summary: 
 #		  Recon: Scan the target for low-hanging fruit and open ports
@@ -101,13 +102,13 @@ stages:
 golismero_scanning:
     stage: Recon
     tags: 
-        - nmap
+        - shell
     retry: 
         max: 2
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Golismero Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - docker run -i ares sh -c "golismero ${TARGET_IP} -o golismero_Results.txt > /dev/null 2>&1 && cat golismero_Results.txt" | tee golismero_Results.txt
@@ -115,6 +116,23 @@ golismero_scanning:
         paths:
             - golismero_Results.txt    
 
+
+demo_job:
+    stage: Recon
+    tags: 
+        - shell
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] TEST [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "hello"
+    artifacts:
+        paths:
+            - golismero_Results.txt    
 
 
 #----------------------------------------------------------Ping, Traceroute, Nslookup----------------------------------------------------------------------------
@@ -130,13 +148,13 @@ golismero_scanning:
 pingTracerouteNslookup:
     stage: Recon
     tags: 
-        - uniscan
+        - shell
     retry: 
         max: 2
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Pinging Target [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - echo "+++++++ Ping Result +++++++" > pingTraceRouteNslookup_Results.txt
@@ -168,13 +186,13 @@ pingTracerouteNslookup:
 masscan_scanning:
     stage: Recon
     tags: 
-        - openscap
+        - shell
     retry: 
         max: 2
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Masscan Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - docker run -i ares sh -c "masscan -oL report.txt --ports 0-65535 ${TARGET_IP} --rate 25000 && sed -i -e 's/\(#masscan\|open tcp \| ${TARGET_IP}.*\|# end\)//g' report.txt && cat report.txt" | tee masscan_Results.txt
@@ -217,7 +235,7 @@ masscan_scanning:
 #        when: 
 #            - always
 #    script:
-#        - sudo -s | echo $PASSWORD
+#        - sudo -s | echo $PASSWORD | tee > /dev/null
 #        - BLUE='\033[1;34m'
 #        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SERVICE Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
 #        - touch PORT_enum_Results.txt 
@@ -239,7 +257,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] FTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 21_enum_Results.txt 
@@ -261,7 +279,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SSH Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 22_enum_Results.txt 
@@ -282,7 +300,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Telnet Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 23_enum_Results.txt 
@@ -303,7 +321,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SMTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 25_enum_Results.txt 
@@ -325,7 +343,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] DNS Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 53_enum_Results.txt 
@@ -346,7 +364,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] HTTP Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 80_enum_Results.txt 
@@ -367,7 +385,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 110 (POP3) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 110_enum_Results.txt 
@@ -388,7 +406,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 111 (RPC) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 111_enum_Results.txt 
@@ -409,7 +427,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 139 (SMB) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 139_enum_Results.txt 
@@ -430,7 +448,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] HTTPS Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 443_enum_Results.txt 
@@ -451,7 +469,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] SMB Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 445_enum_Results.txt 
@@ -472,7 +490,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] MSSQL Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 1433_enum_Results.txt 
@@ -493,7 +511,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] 3306 (MySQL) Port Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 3306_enum_Results.txt 
@@ -514,7 +532,7 @@ masscan_scanning:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - BLUE='\033[1;34m'
         - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Port 8080 Enumeration [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
         - touch 8080_enum_Results.txt 
@@ -549,7 +567,7 @@ report:
         when: 
             - always
     script:
-        - sudo -s | echo $PASSWORD
+        - sudo -s | echo $PASSWORD | tee > /dev/null
         - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker stop {}
         - docker ps -a | awk '{ print $1,$2 }' | grep ares | awk '{print $1 }' | xargs -I {} docker rm {}
         - BLUE='\033[1;34m'
@@ -558,9 +576,9 @@ report:
         - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" > pipeline_Report.txt
         - echo "||||||||||||||||||||||||||||||||||||||||||||||||| System Scan Results |||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
         - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
-        - echo "Report generated on " >> pipeline_Report.txt
+        - echo "Report generated on -" >> pipeline_Report.txt
         - echo `date` >> pipeline_Report.txt
-        - echo "Target IP - " >> pipeline_Report.txt
+        - echo "Target IP -" >> pipeline_Report.txt
         - echo $TARGET_IP >> pipeline_Report.txt
         - echo " " >> pipeline_Report.txt 
         - echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" >> pipeline_Report.txt
