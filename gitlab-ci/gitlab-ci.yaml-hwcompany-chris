@@ -1,0 +1,431 @@
+# Author: Chris Hong | christopher.j.hong@nasa.gov
+
+# VARIABLES
+# Make sure following variables are defined (masked + protected) under Settings > CI CD > Variables
+#       DOCKER_USERNAME
+#       DOCKER_PASSWORD
+#       REGISTRY (example: example.container.registry.com:4567)
+#       TAGGED_IMAGE (example: example.container.registry.com:4567/username/repositoryName:tag)
+
+image: alpine:latest
+
+# Stage summary: Building: Make a docker image and push it into the continer registry
+#                Testing: Get image from regsitry and perform various tests on it
+#                Cleanup: Delete extra images and containers to prevent clogging storage
+stages:
+    - Building
+    - Testing
+    - Cleanup
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================
+#--------------------------------------------------------------------BUILD--------------------------------------------------------------------------------
+#=========================================================================================================================================================
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The build stage does 1 of 2 things depending on the use case:
+#       1) The Dockerfile, app.py file, and requirements.txt are available. In this case, uncomment Build Mode 1
+#       2) The Docker image is available on dockerhub to be pulled. In this case, uncomment Build Mode 2
+
+
+#----------------------------------------------------------Build Mode 1-------------------------------------------------------------------------------
+# Build Mode 1 stage steps:
+#       1) Runs a shell and displays info to identify who the runner is and where it is running (for debugging purposes)
+#       2) Builds docker image whose tag points to the container registry
+#       3) Displays images and containers running (for debugging purposes)
+#       4) Logs into the docker container registry
+#       5) Pushes the created image to the registry
+#       6) Retries up to 3 times in case of errors
+
+build:
+    stage: Building
+    retry:
+        max: 2
+        when:
+            - always
+    tags:
+        - build
+    script:
+        - pwd
+        - uname -a
+        - whoami
+        - docker --version
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Building container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "Note, The login step (next) occasionally produces a '400 Bad Request', please repeat the pipeline if this occurs."
+        - docker login $REGISTRY -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+        - docker build --tag=$TAGGED_IMAGE .
+        - docker images
+        - docker push $TAGGED_IMAGE
+        - echo "Pushed image to registry, proceeding to testing stage."
+
+
+
+#----------------------------------------------------------Build Mode 2-------------------------------------------------------------------------------
+# Build stage steps:
+#       1) Runs a shell and displays info to identify who the runner is and where it is running (for debugging purposes)
+#       2) Pulls docker image and retags it
+#       3) Displays images and containers running (for debugging purposes)
+#       4) Logs into the docker container registry
+#       5) Pushes the retagged imaged to the registry
+#       6) Retries up to 3 times in case of errors
+
+#build:
+#    stage: Building
+#    retry:
+#        max: 2
+#        when:
+#            - always
+#    tags:
+#        - build
+#    script:
+#        - pwd
+#        - uname -a
+#        - whoami
+#        - docker --version
+#        - BLUE='\033[1;34m'
+#        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Building container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+#        - echo "Note, The login step (next) occasionally produces a '400 Bad Request', please repeat the pipeline if this occurs."
+#        - docker login $REGISTRY -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+#       - docker pull jupyterhub/jupyterhub
+#        - docker tag jupyterhub/jupyterhub:latest $TAGGED_IMAGE
+#        - docker images
+#        - docker push $TAGGED_IMAGE
+#        - echo "Pushed image to registry, proceeding to testing stage."
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================
+#--------------------------------------------------------------------TEST---------------------------------------------------------------------------------
+#=========================================================================================================================================================
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Tests:
+#       1) Code Quality
+#       2) Container Scanning
+#       3) Nmap Scanning
+#       4) Anchore Scanning
+#       5) DAST (2 Parts)
+#       6) SAST
+#       7) Dependency Scanning
+
+#----------------------------------------------------------Code Quality Job-------------------------------------------------------------------------------
+# Scans for code quality
+
+code_quality:
+    stage: Testing
+    tags:
+        - code_quality
+    image: docker:stable
+    services:
+        - docker:stable-dind
+    variables:
+        DOCKER_DRIVER: overlay2
+    script:
+        - pwd
+        - uname -a
+        - whoami
+        - docker --version
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Performing Code Quality Checks [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run
+            --env SOURCE_CODE="$PWD"
+            --volume "$PWD":/code
+            --volume /var/run/docker.sock:/var/run/docker.sock
+            "registry.gitlab.com/gitlab-org/security-products/codequality:11-8-stable" /code
+    artifacts:
+        reports:
+            codequality: gl-code-quality-report.json
+
+
+#----------------------------------------------------Container Scanning Job-------------------------------------------------------------------------------
+# Uses Clair and clair-scanner to scan containers for vulnerabilities
+# Vulnerabilities can be whitelisted in the clair-whitelist.yml file
+
+container_scanning:
+    stage: Testing
+    tags:
+        - container_scanning
+    image: docker:stable
+    retry:
+        max: 2
+        when:
+            - always
+    services:
+        - name: docker:dind
+          command: ["--insecure-registry=gitlab-demo.nccs.nasa.gov:4567"]
+    variables:
+        INSECURE_REGISTRY: "{ \"insecure-registries\":[\"${REGISTRY}\",\"https://${REGISTRY}\"] }"
+    allow_failure: true
+    variables:
+        DOCKER_DRIVER: overlay2
+        CLAIR_LOCAL_SCAN_VERSION: v2.0.8_fe9b059d930314b54c78f75afe265955faf4fdc1
+
+    script:
+        - pwd
+        - touch gl-container-scanning-report.json
+        - whoami
+        - uname -a
+        - cd /
+        - cd etc
+        - mkdir docker
+        - cd docker
+        - touch daemon.json
+        - echo $INSECURE_REGISTRY
+        - echo "{ \"insecure-registries\":[\"gitlab-demo.nccs.nasa.gov:4567\",\"https://gitlab-demo.nccs.nasa.gov:4567\"] }" > daemon.json
+        - ls
+        - cat daemon.json
+        - update-ca-certificates
+        - docker login $REGISTRY -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Scanning Container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -d --name db arminc/clair-db:latest
+        - docker run -p 6060:6060 --link db:postgres -d --name clair --restart on-failure arminc/clair-local-scan:${CLAIR_LOCAL_SCAN_VERSION}
+        - apk add -U wget ca-certificates
+        - docker pull $TAGGED_IMAGE
+        - wget https://github.com/arminc/clair-scanner/releases/download/v8/clair-scanner_linux_amd64
+        - mv clair-scanner_linux_amd64 clair-scanner
+        - chmod +x clair-scanner
+        - touch clair-whitelist.yml
+        - while( ! wget -q -O /dev/null http://docker:6060/v1/namespaces ) ; do sleep 1 ; done
+        - retries=0
+        - echo "Waiting for clair daemon to start"
+        - while( ! wget -T 10 -q -O /dev/null http://docker:6060/v1/namespaces ) ; do sleep 1 ; echo -n "." ; if [ $retries -eq 10 ] ; then echo " Timeout, aborting." ; exit 1 ; fi ; retries=$(($retries+1)) ; done
+        - ./clair-scanner -c http://docker:6060 --ip $(hostname -i) -r gl-container-scanning-report.json -l clair.log -w clair-whitelist.yml $TAGGED_IMAGE || true
+    artifacts:
+        reports:
+            container_scanning: gl-container-scanning-report.json
+
+
+
+#-------------------------------------------------------------Nmap Scanning------------------------------------------------------------------------------
+# Scans the container with an nmap pointed at itself
+# Steps (run inside of container with the docker run command):
+#       1) Runs an update and upgrade with apt-get
+#       2) Installs nmap to the container ("y" piped into the command to automatically proceed with installation)
+#       3) Passes the output of hostname -i (the ip address of the container) to nmap -sC -A -v [IP ADDRESS]
+#                                                                                   -sC = Use default scripts
+#                                                                                   -A = Use OS & service detection
+#                                                                                   -v = increase verbosity level
+nmap_scaning:
+    stage: Testing
+    allow_failure: true
+    tags:
+        - nmap
+    script:
+        - pwd
+        - uname -a
+        - whoami
+        - docker --version
+        - BLUE='\033[1;34m'
+        - PURPLE='\033[1;35m'
+        - BANNER2="${PURPLE}[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[ End Nmap Output ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n"
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Enumerating with Nmap [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker images
+        - docker run $TAGGED_IMAGE sh -c "yes | apt-get update && yes | apt-get upgrade && yes | apt-get install nmap && hostname -i | xargs nmap -sC -A -v"
+        - echo -e $BANNER2
+
+
+
+#-------------------------------------------------------------Anchore Scanning------------------------------------------------------------------------------
+# Scans the built image from the container registry.
+# Creates:
+#       os report
+#       java report
+#       python report
+#       vulnerability report
+#       details report
+#       policy report
+
+anchore_scan:
+    stage: Testing
+    retry:
+        max: 2
+        when:
+            - always
+    tags:
+        - anchore
+    image:
+        name: anchore/anchore-engine:v0.3.0
+        entrypoint: [""]
+    services:
+        - name: anchore/engine-db-preload:v0.3.0
+          alias: anchore-db
+
+    variables:
+        GIT_STRATEGY: none
+        ANCHORE_FAIL_ON_POLICY: "false"
+        ANCHORE_TIMEOUT: 500
+
+    script:
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Scanning With Anchore [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - |
+            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.0/scripts/anchore_ci_tools.py
+            chmod +x /tmp/anchore_ci_tools.py
+            ln -s /tmp/anchore_ci_tools.py /usr/local/bin/anchore_ci_tools
+        - anchore_ci_tools --setup
+        - anchore-cli --u admin --p foobar registry add $REGISTRY $DOCKER_USERNAME $DOCKER_PASSWORD --insecure --skip-validate
+        - anchore_ci_tools --analyze --report --image $TAGGED_IMAGE --timeout "$ANCHORE_TIMEOUT"
+        - |
+            if [ "$ANCHORE_FAIL_ON_POLICY" == "true" ]; then
+                anchore-cli evaluate check "$IMAGE_NAME"
+            else
+                set +o pipefail
+                anchore-cli evaluate check "$IMAGE_NAME" | tee /dev/null
+            fi
+
+    artifacts:
+        name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}
+        paths:
+            - anchore-reports/*
+
+
+
+#--------------------------------------------------------------------SAST--------------------------------------------------------------------------------
+# Performs static application security testing (SAST) on source code to sniff out vulnerabilities
+
+sast:
+    stage: Testing
+    tags:
+        - sast
+    image: docker:stable
+    variables:
+        DOCKER_DRIVER: overlay2
+    allow_failure: true
+    services:
+        - docker:stable-dind
+    script:
+        - export SAST_VERSION=${SP_VERSION:-$(echo "$CI_SERVER_VERSION" | sed 's/^\([0-9]*\)\.\([0-9]*\).*/\1-\2-stable/')}
+        - |
+            docker run \
+                --env SAST_ANALYZER_IMAGES \
+                --env SAST_ANALYZER_IMAGE_PREFIX \
+                --env SAST_ANALYZER_IMAGE_TAG \
+                --env SAST_DEFAULT_ANALYZERS \
+                --env SAST_EXCLUDED_PATHS \
+                --env SAST_BANDIT_EXCLUDED_PATHS \
+                --env SAST_BRAKEMAN_LEVEL \
+                --env SAST_GOSEC_LEVEL \
+                --env SAST_FLAWFINDER_LEVEL \
+                --env SAST_DOCKER_CLIENT_NEGOTIATION_TIMEOUT \
+                --env SAST_PULL_ANALYZER_IMAGE_TIMEOUT \
+                --env SAST_RUN_ANALYZER_TIMEOUT \
+                --volume "$PWD:/code" \
+                --volume /var/run/docker.sock:/var/run/docker.sock \
+                "registry.gitlab.com/gitlab-org/security-products/sast:$SAST_VERSION" /app/bin/run /code
+    dependencies: []
+    artifacts:
+        name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}
+        paths:
+            - sast-report/*
+        reports:
+            sast: gl-sast-report.json
+
+
+
+#-------------------------------------------------------------DAST--------------------------------------------------------------------------------------
+# Dynamic Application Security Testing is done in 2 parts:
+#       predast: This stage activates the container and runs its webserver. The container stays running while Owasp ZAP (dast job) scans it.
+#                predast is necessary because gitlab shell commands cannot issue an "enter" coommand, so the pipeline will be stuck while the container
+#                is running.
+#       dast: This job waits for 5 seconds so predast can make the container run. It then points OWASP ZAP at the running container's web page to be scanned.
+
+
+predast:
+    stage: Testing
+    tags:
+        - predast
+    allow_failure: true
+    script:
+        - whoami
+        - pwd
+        - echo "Hurry up DAST, terminating container in 10 minutes"
+        - timeout 600s docker run -p 4000:80 $TAGGED_IMAGE sh -c "python3 manage.py makemigrations | python3 manage.py migrate | python3 manage.py runserver 80"
+
+
+dast:
+    stage: Testing
+    tags:
+        - dast
+    allow_failure: true
+    script:
+        - sleep 5s
+        - touch gl-dast-report.json
+        - whoami
+        - docker ps
+        - docker run owasp/zap2docker-weekly zap-baseline.py -P 8000 -t http://127.0.0.1:8000
+    artifacts:
+        name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}
+        paths:
+            - dast-report/*
+        reports:
+            sast: gl-dast-report.json
+
+
+
+#-----------------------------------------------------------Dependency Scanning---------------------------------------------------------------------------
+# Checks for vulnerabilities with dependencies in source and target branches
+
+dependency_scanning:
+    image: docker:stable
+    tags:
+        - dependency_scanning
+    stage: Testing
+    variables:
+        DOCKER_DRIVER: overlay2
+    allow_failure: true
+    services:
+        - docker:stable-dind
+    script:
+        - export DS_VERSION=${SP_VERSION:-$(echo "$CI_SERVER_VERSION" | sed 's/^\([0-9]*\)\.\([0-9]*\).*/\1-\2-stable/')}
+        - |
+            docker run \
+            --env DS_ANALYZER_IMAGES \
+            --env DS_ANALYZER_IMAGE_PREFIX \
+            --env DS_ANALYZER_IMAGE_TAG \
+            --env DS_DEFAULT_ANALYZERS \
+            --env DEP_SCAN_DISABLE_REMOTE_CHECKS \
+            --env DS_DOCKER_CLIENT_NEGOTIATION_TIMEOUT \
+            --env DS_PULL_ANALYZER_IMAGE_TIMEOUT \
+            --env DS_RUN_ANALYZER_TIMEOUT \
+            --volume "$PWD:/code" \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            "registry.gitlab.com/gitlab-org/security-products/dependency-scanning:$DS_VERSION" /code
+    dependencies: []
+    artifacts:
+        reports:
+            dependency_scanning: gl-dependency-scanning-report.json
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================
+#------------------------------------------------------------------CLEANUP--------------------------------------------------------------------------------
+#=========================================================================================================================================================
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Cleanup stage steps
+#       1) Runs a shell and displays info to identify who the runner is and where it is running (for debugging purposes)
+#       2) (In 1 command) lists the images matching the exact name that the build stage assigns when creating it, removes the images by returned ID
+#       3) Same as previous command but removes duplicates (docker places <none> name on duplicates)
+#       4) Searches for and deletes all stopped containers
+
+cleanup:
+    stage: Cleanup
+    tags:
+        - cleanup
+    script:
+        - pwd
+        - uname -a
+        - whoami
+        - docker --version
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Removing Temporary Docker Image(s) & Container(s) [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker images
+        - docker images -a | grep "jupyter-scan" | awk '{print $3}' | xargs docker rmi -f
+#       - docker images -a | grep "<none>" | awk '{print $3}' | xargs docker rmi -f #Deletes duplictes with name <none>, but causes pipeline to fail
+        - docker container rm $(docker container ls -q -f 'status=exited' -f 'exited=0')
+        - echo "Image(s) removed"
+        - docker images
+
+

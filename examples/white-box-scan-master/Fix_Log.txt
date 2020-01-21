@@ -1,0 +1,2 @@
+1) fork/exec /tmp/go-build581148586/b001/exe/main: permission denied (For gobuster)
+        1) Enter "export GOPATH=~/tmp/" into machine

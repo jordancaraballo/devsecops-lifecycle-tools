@@ -1,0 +1,151 @@
+**Fix Log**:
+=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[][]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[][]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[][]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[]=[][]=[]
+
+
+1) Get container registry up and running (only works with omnibus gitlab installations. gitlab.rb wont exist if it was a source install)
+    1) Set registry_external_url 'https://gitlab-demo.blah.blah:4567’ in gitlab.rb
+
+
+
+2) "gitlab-demo.blah.blah:4567 x509 issuer not trusted" (Only for host system, does not work inside of a dind container)
+    1) edit /etc/docker/daemon.json to be:
+                {
+                    "insecure-registries": ["gitlab-demo.blah.blah:4567","https://gitlab-demo.blah.blah:4567"]
+                }
+    2) sudo systemctl daemon-reload
+    3) sudo systemctl restart docker
+
+
+
+3) "gitlab-demo.blah.blah:4567 x509 issuer not trusted" (For dind container, such as when container_scanning job is running)
+    Reference: https://gitlab.com/gitlab-org/gitlab-runner/issues/1678#note_52465839 
+    1) In .gitlab-ci.yml file change to: 
+        
+        image: docker:stable
+        services:
+            - name: docker:dind
+              command: ["--insecure-registry=gitlab-demo.blah.blah:4567"]
+        
+    2) Added to yml file before scripts section:
+            services:
+                - name: docker:dind
+                  command: ["--insecure-registry=gitlab-demo.blah.blah:4567"]
+        
+
+4) Uploading artifacts...WARNING: gl-container-scanning-report.json: no matching files ERROR: No files to upload
+    1) Use pwd to determine where runner is 
+    2) touch the filename to allow it to place its results in the file. 
+  
+    
+    
+5) Docker compose installed, but error: "docker-compose: error while loading shared libraries: libz.so.1: failed to map segment from shared object: Operation 
+    not permitted"
+    1) sudo mount /tmp -o remount,exec
+   
+   
+
+6) fatal: unable to access 'https://gitlab-ci-token:[MASKED]@gitlab-demo.blah.blah:4443/gitlab/user/hw-company.git/':
+    Could not resolve host: gitlab-demo.blah.blah
+        1) Edit /etc/gitlab-runner/config.toml file, make sure that runner doing the job is:
+            [[runners]]
+                name = "NAME OF RUNNER"
+                url = "https://gitlab-demo.blah.blah:4443/gitlab/"
+                token = "TOKEN FOUND IN ADMIN AREA > RUNNERS"
+                executor = "docker"
+                [runners.custom_build_dir]
+                [runners.docker]
+                    tls_verify = false
+                    image = "docker:stable"
+                    dns = ["ip", "ip", "ip"]
+                    dns_search = ["domain", "domain"]
+                    privileged = true
+                    disable_entrypoint_overwrite = false
+                    oom_kill_disable = false
+                    disable_cache = false
+                    volumes = ["/cache"]
+                    extra_hosts = ["git.local:10.0.5.15", "gitlab-demo.blah.blah:ip"]
+                    network_mode = "bridge"
+                    pull_policy = "if-not-present"
+                    shm_size = 0
+                [runners.cache]
+                    [runners.cache.s3]
+                    [runners.cache.gcs]
+   
+   
+    
+6) Anchore scan "no such host" error
+    1) /etc/gitlab-runner/config.toml, make runner config as follows:
+            [[runners]]
+                name = "Runner-Anchore"
+                url = "https://gitlab-demo.blah.blah:4443/gitlab/"
+                token = "Hjh2AMxhMTJM_u6xreqB"
+                executor = "docker"
+            [runners.custom_build_dir]
+            [runners.docker]
+                tls_verify = false
+                image = "anchore/anchore-engine:v0.3.0"
+                dns = ["domain_ip", "domain_ip", "domain_ip"]
+                dns_search = ["domain", "domain"]
+                privileged = true
+                disable_entrypoint_overwrite = false
+                oom_kill_disable = false
+                disable_cache = false
+                volumes = ["/cache"]
+                extra_hosts = ["git.local:10.0.5.15", "gitlab-demo.blah.blah:ip"]
+                network_mode = "bridge"
+                pull_policy = "if-not-present"
+                shm_size = 0
+            [runners.cache]
+            [runners.cache.s3]
+            [runners.cache.gcs]
+ 
+  
+7) Error: Cannot perform an interactive login from a non TTY device
+        1) Make sure variables for login are set under CI/CD Settings 
+      
+      
+        
+8) ERROR: Preparation failed: Error response from daemon: Conflict. The container name "/runner-hyzaC3Wy-project-7-concurrent-0-docker-0" is already in 
+use by container "95d413225bd299ec67449ef02d16d6a1be4d3d0ba7368c606bdd0b2b652d113c". You have to remove (or rename) that container to be able to reuse 
+that name. (executor_docker.go:507:0s) 
+        1) This means that the same runner is trying to do 2 jobs. Make sure there are enough runners and you have tags that allow only them to do the job. 
+                EX) Runner1 (tag: container_scanning), Runner2 (tag: nmap). Runner1 will only do container scanning, 2 will only do nmap. Make sure to
+                set tags on jobs in .gitlab-ci.yml file
+                
+                
+                
+9) Issue with fetching http://deb.debian.org/debian/dists/jessie-updates/InRelease with docker (Nmap scan step)
+        1) Add line to dockerfile (all 1 line):
+        RUN printf "deb http://archive.debian.org/debian/ jessie main\ndeb-src http://archive.debian.org/debian/ jessie main\ndeb http://security.debian.org 
+        jessie/updates main\ndeb-src http://security.debian.org jessie/updates main" > /etc/apt/sources.list
+
+
+
+10) DAST (OWASP ZAP) cant find the website when doing its scan
+        1) One possibility is that there is a port problem. Ensure that ports are bound to 80 since it is scanning a website
+        
+        
+        
+11) Jobs stuck in pending state (not picked up by runner)
+        1) "gitlab-runner run &" on machine
+        
+   
+    
+12) Jobs keep failing with 400 errors and other problems
+        1) Not a fix, but automates the retry process. Insert 
+                retry: 
+                    max: 2
+                    when: 
+                        - always
+            into the yml area for the failing job.
+            
+            
+13) fatal: git fetch-pack: expected shallow list + fatal: The remote end hung up unexpectedly
+        1) Git needs to be upgraded to 2.18.0
+            a) yum install http://opensource.wandisco.com/centos/6/git/x86_64/wandisco-git-release-6-1.noarch.rpm
+            b) yum install git
+            
+
+14) Make job run as root (needed to use some tools and to pass/recieve artifacts from other jobs)
+        1) "sudo -s | echo $PASSWORD | tee > /dev/null" in script section of job.
+            

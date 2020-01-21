@@ -1,0 +1,35 @@
+# Author: Jordan A Caraballo-Vega
+# Simple pipeline to upload threat model.
+
+stages:
+  - threat_model
+  - recon
+
+threat_modeling:
+    stage: threat_model
+    tags:
+        - shell
+        - build
+    script:
+        - 'python3 /opt/threatmodel/uploadThreatModel.py'
+        - who
+
+golismero_scanning:
+    stage: recon
+    tags:
+        - shell
+    retry:
+        max: 2
+        when:
+            - always
+    script:
+        #- sudo -s | echo $PASSWORD | tee > /dev/null
+        - who
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Golismero Scanning [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -i ares sh -c "golismero ${TARGET_IP} -o golismero_Results.txt > /dev/null 2>&1 && cat golismero_Results.txt" | tee golismero_Results.txt
+    artifacts:
+        paths:
+            - golismero_Results.txt
+
+

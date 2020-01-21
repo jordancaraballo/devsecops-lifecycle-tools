@@ -1,0 +1,62 @@
+# Pipeline Name: package-management
+
+# Author: Jordan A Caraballo-Vega | jordan.a.caraballo-vega@nasa.gov
+
+stages:
+    - Get_Source
+    - Security
+    - Build_Install
+    - Regression_Testing
+    - Deploy
+    - Report
+
+# Get source
+
+clone_repo:
+    stage: Get_Source
+    script:
+        - echo "Clone package repository"
+
+# Security checks
+
+# dependency checks
+dependency_check_scan:
+    stage: Security
+    script:
+        - echo "Exec dependency check"
+
+# static analysis security testing
+sast_scan:
+    stage: Security
+    script:
+        - echo "Exec SAST scans"
+
+# build and install application
+build_package:
+    stage: Build_Install
+    script:
+        - echo "Build application. Can add script to execute here. Can add it to a container."
+
+install_package:
+    stage: Build_Install
+    script:
+        - echo "Install application. Can add script here to install application."
+
+# execute regression testing
+exec_regression_tests:
+    stage: Regression_Testing
+    script:
+        - echo "Exec regression tests for this application."
+        - echo "Additional unit tests to execute regression testing"
+
+# upload package to dist.nccs.nasa.gov
+upload_package:
+    stage: Deploy
+    script:
+        - echo "Upload package to dist.nccs.nasa.gov"
+
+# upload report
+upload_report:
+    stage: Report
+    script:
+        - echo "Script to upload report with gitlab api here"

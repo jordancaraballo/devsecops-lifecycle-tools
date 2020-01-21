@@ -1,0 +1,61 @@
+# Pipeline Name: puppet-cm-continuous-integration
+
+# Author: Jordan A Caraballo-Vega | jordan.a.caraballo-vega@nasa.gov
+
+stages:
+    - Code_Quality
+    - Security
+    - Regression_Testing
+    - Merge
+    - Deploy
+    - Report
+
+# Code Quality for developer amusement
+code_quality:
+    stage: Code_Quality
+    script:
+        - echo "Exec Puppet Linters for specific programming language"
+
+# Security checks
+
+# dependency checks
+dependency_check_scan:
+    stage: Security
+    script:
+        - echo "Exec dependency check"
+
+# static analysis security testing
+sast_scan:
+    stage: Security
+    script:
+        - echo "Exec SAST scans"
+
+# verify legitimacy of regression tests
+
+noop_puppet_run:
+    stage: Regression_Testing
+    script:
+        - echo "Run puppet noop to verify if failures exist"
+puppet_run:
+    stage: Regression_Testing
+    script:
+        - echo "Unit tests to check regression tests"
+exec_regression_tests:
+    stage: Regression_Testing
+    script:
+        - echo "regression testing #1"
+        - echo "regression testing #2"
+merge_commit:
+    stage: Merge
+    script:
+        - echo "Approve merge"
+deploy_commit:
+    stage: Deploy
+    script:
+        - echo "Deploy commit"
+
+# upload report
+upload_report:
+    stage: Report
+    script:
+        - echo "Script to upload report with gitlab api here"

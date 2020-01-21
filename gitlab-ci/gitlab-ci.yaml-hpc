@@ -1,0 +1,62 @@
+# Pipeline Name: discover-application-scan
+
+# Author: Jordan A Caraballo-Vega | jordan.a.caraballo-vega@nasa.gov
+
+stages:
+    - Code_Quality
+    - Security
+    - Regression_Testing
+    - Report
+
+# Code Quality for developer amusement
+
+
+code_quality:
+    stage: Code_Quality
+    script:
+        - echo "Exec Linters for specific programming language"
+
+# Security checks
+
+# dependency checks
+dependency_check:
+    stage: Security
+    script:
+        - echo "Exec dependency check"
+
+# static analysis security testing
+sast:
+    stage: Security
+    script:
+        - echo "Exec SAST scans"
+
+# verify legitimacy of regression tests
+
+build_application:
+    stage: Regression_Testing
+    script:
+        - echo "Script to build application"
+check_regression_tests:
+    stage: Regression_Testing
+    script:
+        - echo "Unit tests to check regression tests"
+
+# execute regression testing
+exec_regression_tests:
+    stage: Regression_Testing
+    script:
+        - echo "SLURM Script to execute regression testing
+        - echo "Additional SLURM Script to execute regression testing"
+
+# retrieve reports
+retrieve_report:
+    stage: Report
+    script:
+        - echo "Script to search for report here"
+
+# upload report
+upload_report:
+    stage: Report
+    script:
+        - echo "Script to upload report with gitlab api here"
+

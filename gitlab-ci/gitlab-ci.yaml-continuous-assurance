@@ -1,0 +1,61 @@
+# Pipeline Name: puppet-cm-continuous-integration
+
+# Author: Jordan A Caraballo-Vega | jordan.a.caraballo-vega@nasa.gov
+
+stages:
+    - Requirements
+    - Security
+    - Report
+
+# Requirements met
+check_assets_db:
+    stage: Requirements
+    script:
+        - echo "Checks to see if the system is in the NCCS inventory"
+
+check_backup_configured:
+    stage: Requirements
+    script:
+        - echo "Checks to see if backups are configured correctly"
+
+check_nagios_configured:
+    stage: Requirements
+    script:
+        - echo "Checks to see if nagios is configured correctly"
+
+checks_login_configured:
+    stage: Requirements
+    script:
+        - echo "Checks to see if system is login to centralized log systems"
+
+checks_firewall_configured:
+    stage: Requirements
+    script:
+        - echo "Verify if iptables or additional internal firewall rules are configured"
+
+check_bigfix_configured:
+    stage: Requirements
+    script:
+        - echo "Checks to see if BigFix is installed and reporting (see tier 5 exception)"
+
+# Security tests
+nessus_scan:
+    stage: Security
+    script:
+        - echo "Trigger nessus scan"
+
+compliance_scan:
+    stage: Security
+    script:
+        - echo "Trigger openscap or CIS compliance scan. Refer to scaptest class."
+
+vulnerability_scan:
+    stage: Security
+    script:
+        - echo "Trigger openscap or CIS vulnerability scan. Refer to scaptest class."
+
+# upload report
+upload_report:
+    stage: Report
+    script:
+        - echo "Script to upload report with gitlab api here"

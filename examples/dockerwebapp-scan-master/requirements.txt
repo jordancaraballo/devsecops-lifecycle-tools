@@ -1,0 +1,5 @@
+# Requirements
+Django==2.0.2
+gunicorn==19.6.0
+barnum
+django-tables2

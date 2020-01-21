@@ -1,0 +1,581 @@
+# Pipeline Name: jupyter-scan
+# Author: Chris Hong | christopher.j.hong@nasa.gov
+
+# Use: This pipeline is the implementation of the container-scan pipeline. Since container-scan is the “generic” container 
+#	pipeline, this pipeline is container-scan but adapted to scan a container with Jupiter-Hub on it. 
+
+# Tools Used: 
+#	Anchore
+#	Bandit
+#	Clair 
+# 	Docker
+#	Gemnasium 
+#	Gitlab Code Quality 
+#	Gitleaks
+#	Nmap 
+#	OWASP ZAP
+
+# Requirements for pipeline:
+#	1) A running Gitlab instance
+#	2) A file named “.gitlab-ci.yml” containing the contents of this file in the master branch of the repository 
+#	3) Latest version of docker installed
+#	4) A docker image in 1 of 2 forms:
+#			a) An image on the local machine, created from a docker file using docker build
+#			b) An image that can be pulled from docker hub using docker pull
+#	5) Nmap installed 
+#	6) Bandit installed 
+#	7) Gitlab-runner installed + configured
+#	8) At least 2 shell executor runners configured
+#	9) At least 3 docker executor runners configured 
+#	10) At least 25 Gb storage on host machine
+#	11) Sufficient processing power to perform required tasks in pipeline 
+
+
+# Pipeline Overview:
+#
+#	BUILD 
+#		|
+#		|- - - build 
+#	TEST 
+#		|
+#		|- - - code_quality
+#		|- - - container_scanning
+#		|- - - anchore_scan
+#		|- - - sast
+#		|- - - predast
+#		|- - - dast
+#		|- - - dependency_scanning 
+#		|- - - nmap_scanning 
+#	CLEANUP
+#		|
+#		|- - - cleanup 
+#	REPORT
+#		|
+#		|- - - report
+
+# VARIABLES
+# Make sure following variables are defined (masked + protected) under Settings > CI CD > Variables
+#       DOCKER_USERNAME - Username to log into docker, can be created at https://hub.docker.com/signup?next=%2F%3Fref%3Dlogin
+#       DOCKER_PASSWORD - Password to log into docker
+#	 PASSWORD - Root password for system running the gitlab instance. Runners must be root to pass artifacts (reports) to other jobs. 
+#       REGISTRY - The registry is a private location where containers can be pushed to (example: example.container.registry.com:4567) . 
+#					This is needed for several of the tests in this pipeline. The registry can be created by editing the gitlab.rb file. Refer
+#					to Fix_Log.txt for more information.
+#       TAGGED_IMAGE - The name of the image to be scanned (example: example.container.registry.com:4567/username/repositoryName:tag)
+#					An image needs to have a standard name to be operated on by the pipeline. For example, the TAGGED_IMAGE name for  
+#					an image called “mycontainer”, in the gitlab project called “my-cool-project”, using the registry (same as REGISTRY 
+#					variable) “mygreatrepository.example.com:4567”, and my docker username “mylogin”, would be:
+#					mygreatrepository.example.com:4567/mylogin/my-cool-project:mycontainer 
+
+
+# Stage summary: 
+#		  Building: Make a docker image and push it into the container registry
+#                Testing: Get image from registry and perform various tests on it
+#                Cleanup: Delete extra images and containers to prevent clogging storage
+#                Report: Combine report artifacts from all previous jobs into a singular report
+
+stages:
+    - Building
+    - Testing
+    - Cleanup
+    - Report
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#--------------------------------------------------------------------BUILD--------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The build stage does 1 of 2 things depending on the use case: 
+#       1) The Dockerfile, app.py file, and requirements.txt are available. In this case, uncomment Build Mode 1
+#       2) The Docker image is available on dockerhub to be pulled. In this case, uncomment Build Mode 2
+
+
+#----------------------------------------------------------Build Mode 1-------------------------------------------------------------------------------
+# Build Mode 1 stage steps:
+#       1) (In before_script) Runs as root since only root runners can pass artifacts to other stages
+#	    2) (In before_script) Scans repository with gitleaks to prevent any information being accidentally committed  
+#       3) Builds docker image whose tag points to the container registry
+#       4) Displays images and containers running (for debugging purposes)
+#       5) Logs into the docker container registry
+#       6) Pushes the created image to the registry
+#       7) Retries up to 3 times in case of errors
+
+
+#build:
+#    stage: Building
+#    retry: 
+#        max: 2
+#        when: 
+#            - always
+#    tags:
+#        - build
+#    before_script:
+#        - sudo -s | echo $PASSWORD | tee > /dev/null
+#        - gitleaks --repo-path=/path/to/cloned/repo -v
+#    script:
+#        - BLUE='\033[1;34m'
+#        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Building container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+#        - echo "Note, The login step (next) occasionally produces a '400 Bad Request', please repeat the pipeline if this occurs."
+#        - docker login registry.example.com:4567 -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+#        - docker build --tag=$TAGGED_IMAGE .
+#        - docker images
+#        - docker push $TAGGED_IMAGE 
+#        - echo "Pushed image to registry, proceeding to testing stage."
+
+
+
+#----------------------------------------------------------Build Mode 2-------------------------------------------------------------------------------
+# Build stage steps:
+#       1) (In before_script) Runs as root since only root runners can pass artifacts to other stages
+#	    2) (In before_script) Scans repository with gitleaks to prevent any information being accidentally committed  
+#       3) Pulls docker image and retags it
+#       4) Displays images and containers running (for debugging purposes)
+#       5) Logs into the docker container registry
+#       6) Pushes the retagged imaged to the registry
+#       7) Retries up to 3 times in case of errors
+
+build:
+    stage: Building
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags:
+        - build
+    before_script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - gitleaks --repo-path=/home/cjhong/Jupyter-scan/jupyter-scan -v 
+    script:
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Building container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - echo "Note, The login step (next) occasionally produces a '400 Bad Request', please repeat the pipeline if this occurs."
+        - docker login $REGISTRY -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+        - docker pull jupyterhub/jupyterhub
+        - docker tag jupyterhub/jupyterhub:latest $TAGGED_IMAGE
+        - docker images
+        - docker push $TAGGED_IMAGE 
+        - echo "Pushed image to registry, proceeding to testing stage."
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#========================================================================================================================================================= 
+#--------------------------------------------------------------------TEST--------------------------------------------------------------------------------- 
+#=========================================================================================================================================================
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The test stage performs 4 tests on the container that was built/pulled in the build stage. This stage is the primary function of the pipeline.
+#
+# It has 4 jobs - 
+#		1) Code Quality 
+#		2) Container Scanning
+#		3) Anchore Scanning 
+#		4) SAST
+#		5) PreDAST
+#		6) DAST
+#		7) Dependency Scanning 
+#		8) Nmap Scanning 
+#
+#----------------------------------------------------------Code Quality Job-------------------------------------------------------------------------------        
+# The code quality job uses Gitlab’s code quality docker container to examine the source code of the repository that this pipeline resides in.
+# This job’s runner must have a docker executor. A runner, configured with a docker executory, was made specifically for this job and 
+#	tagged “code_quality” under Admin > Runners 
+
+# What this job does: 
+#		1) Runs using a runner configured with docker
+#		2) Runs (downloads if not present on machine) the gitlab code quality container, then runs checks in the directory of the source code for this repo 
+
+code_quality:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags:
+        - code_quality
+    image: docker:stable
+    services:
+        - docker:stable-dind
+    variables:
+        DOCKER_DRIVER: overlay2
+    script:
+        - touch gl-code-quality-report.json
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Performing Code Quality Checks [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run
+            --env SOURCE_CODE="$PWD"
+            --volume "$PWD":/code
+            --volume /var/run/docker.sock:/var/run/docker.sock
+            "registry.gitlab.com/gitlab-org/security-products/codequality:11-8-stable" /code || true
+    artifacts:
+        reports:
+            codequality: gl-code-quality-report.json
+
+
+    
+#----------------------------------------------------Container Scanning Job-------------------------------------------------------------------------------        
+# Container scanning is a job that uses Clair to scan the container for this pipeline. Clair then reports back found CVEs within the container. 
+# This job’s runner must have a docker executor. A runner, configured with a docker executory, was made specifically for this job and 
+#	tagged “container_scanning” under Admin > Runners 
+#
+# What this job does: 
+#		1) Runs using a runner configured with docker
+#		2) specifies gitlab-demo.nccs.nasa.gov:4567 as an insecure registry. Without this, the job would fail with an x509 certificate error
+#		3) Creates the report json file
+#		4) Runs (downloads if not present on machine) the Clair docker container
+#		5) Pulls the image created in the build stage from docker hub to use with Clair
+#		6) Saves results into json file 
+
+
+container_scanning:
+    stage: Testing
+    tags:
+        - container_scanning
+    image: docker:stable
+    retry: 
+        max: 2
+        when: 
+            - always
+    services:
+        - name: docker:dind
+          command: ["--insecure-registry=gitlab-demo.nccs.nasa.gov:4567"]
+    allow_failure: true
+    variables:
+        DOCKER_DRIVER: overlay2
+        CLAIR_LOCAL_SCAN_VERSION: v2.0.8_fe9b059d930314b54c78f75afe265955faf4fdc1
+    script:
+        - touch gl-container-scanning-report.json
+#        - docker login $REGISTRY -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Scanning Container [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker run -d --name db arminc/clair-db:latest
+        - docker run -p 6060:6060 --link db:postgres -d --name clair --restart on-failure arminc/clair-local-scan:${CLAIR_LOCAL_SCAN_VERSION}
+        - apk add -U wget ca-certificates
+        - docker pull $TAGGED_IMAGE
+        - wget https://github.com/arminc/clair-scanner/releases/download/v8/clair-scanner_linux_amd64
+        - mv clair-scanner_linux_amd64 clair-scanner
+        - chmod +x clair-scanner
+        - touch clair-whitelist.yml
+        - while( ! wget -q -O /dev/null http://docker:6060/v1/namespaces ) ; do sleep 1 ; done
+        - retries=0
+        - echo "Waiting for clair daemon to start"
+        - while( ! wget -T 10 -q -O /dev/null http://docker:6060/v1/namespaces ) ; do sleep 1 ; echo -n "." ; if [ $retries -eq 10 ] ; then echo " Timeout, aborting." ; exit 1 ; fi ; retries=$(($retries+1)) ; done
+        - ./clair-scanner -c http://docker:6060 --ip $(hostname -i) -r gl-container-scanning-report.json -l clair.log -w clair-whitelist.yml $TAGGED_IMAGE || true
+    artifacts:
+        reports:
+            container_scanning: gl-container-scanning-report.json
+
+    
+
+#-------------------------------------------------------------Anchore Scanning------------------------------------------------------------------------------
+# Anchore is a dedicated container scanning tool. This, used in conjunction with Clair (from container_scanning job) covers a large area of scanning 
+#
+# What this job does: 
+#		1) Downloads Anchore engine
+#		2) Runs setup on anchore 
+#		3) Adds registry with built image to anchore 
+#		4) Performs analysis on container
+#		5) Creates following reports:
+#       			os report
+#      				java report
+#       			python report
+#       			vulnerability report
+#       			details report
+#       			policy report
+
+anchore_scan:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags: 
+        - anchore
+    image:
+        name: anchore/anchore-engine:v0.3.0
+        entrypoint: [""]
+    services:
+        - name: anchore/engine-db-preload:v0.3.0
+          alias: anchore-db
+    variables:
+        GIT_STRATEGY: none
+        ANCHORE_FAIL_ON_POLICY: "false"
+        ANCHORE_TIMEOUT: 500
+    script:
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Scanning With Anchore [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - |
+            curl -o /tmp/anchore_ci_tools.py https://raw.githubusercontent.com/anchore/ci-tools/v0.3.0/scripts/anchore_ci_tools.py
+            chmod +x /tmp/anchore_ci_tools.py
+            ln -s /tmp/anchore_ci_tools.py /usr/local/bin/anchore_ci_tools
+        - anchore_ci_tools --setup
+        - anchore-cli --u admin --p foobar registry add $REGISTRY $DOCKER_USERNAME $DOCKER_PASSWORD --insecure --skip-validate
+        - anchore_ci_tools --analyze --report --image $TAGGED_IMAGE --timeout "$ANCHORE_TIMEOUT"
+    artifacts:
+        name: ${CI_JOB_NAME}-${CI_COMMIT_REF_NAME}
+        paths:
+            - anchore-reports/*
+            
+            
+            
+#--------------------------------------------------------------------SAST--------------------------------------------------------------------------------
+# SAST (Static Application Security Testing) examines the code of the application from the inside-out. This is known as static because it performs its
+#	tests while the code is not running, or static. This stage uses Bandit to examine the code. 
+
+# What this job does: 
+#		1) Runs using a runner configured with the shell executor
+#		2) Creates an empty results text file
+#		3) Uses Bandit to scan the repository for code, then saves results to the text file. 
+
+sast:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags:
+        - shell
+    allow_failure: true
+    script:
+        - touch sast_Results.txt
+        - bandit -r /home/cjhong/Jupyter-scan/jupyter-scan/ | tee sast_Results.txt || true
+    artifacts:
+        paths: 
+            - sast_Results.txt
+
+
+
+#--------------------------------------------------------------------Pre DAST--------------------------------------------------------------------------------
+# DAST (Dynamic Application Security Testing) is slightly more complicated than the other jobs. In order for the OWASP ZAP container to scan a web 
+#	application, the page needs to be up and running. However, the JupyterHub container needs to be started in order for its web service to run. The
+#	problem with this is that when the container is placed in the background to perform a scan with ZAP, the <ENTER> key must be pressed to enter
+#	more commands. Unfortunately, there are no ways (that work in this instance) to send the <ENTER> command to the machine in the script. 
+
+# The workaround solution for this problem is to have 2 parts of DAST: preDAST and DAST. PreDAST will activate the Jupyterhub container for 600
+#	seconds (10 minutes) while the DAST stage runs OWASP ZAP simultaneously against the now running container. This should be enough time to perform the 
+#	ZAP baseline scan against it. 
+
+# What this job does: 
+#		1) Runs using a runner configured with the shell executor
+#		2) Runs JupyterHub container for 10 minutes while DAST runs against the running container 
+
+predast:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags: 
+        - predast
+    allow_failure: true
+    script:
+        - echo "Hurry up DAST, terminating container in 10 minutes"
+        - timeout 600s docker run -p 8000:8000 $TAGGED_IMAGE || true 
+
+
+#--------------------------------------------------------------------DAST--------------------------------------------------------------------------------
+# DAST uses OWASP ZAP to run an active scan against the container that preDAST started. 
+
+# What this job does: 
+#		1) Runs using a runner configured with the shell executor
+#		2) Issues a command to sleep for 10 seconds, this gives preDAST a chance to start the container. 
+#		3) Creates an empty text file to store results in
+#		4) Runs OWASP ZAP docker container against the JupyterHub container
+#		5) Places the results of the scans into the text file for reporting later
+
+dast:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags:
+        - dast
+    allow_failure: true
+    script:
+        - sleep 5s
+        - touch dast_Results.txt
+        - docker ps
+        - docker run owasp/zap2docker-weekly zap-baseline.py -P 8000 -t http://127.0.0.1:8000 | tee dast_Results.txt || true 
+    artifacts:
+        paths:
+            - dast_Results.txt
+
+
+
+#-----------------------------------------------------------Dependency Scanning---------------------------------------------------------------------------
+# Dependency scanning checks for vulnerabilities with dependencies in source and target branches using Gemansium.  
+#
+# What this job does:
+#		1) Runs using runner with docker executor
+#		2) Executes the gitlab Dependency scanning container against the source code of the repository
+#		3) Saves results into a json file 
+
+dependency_scanning:
+    image: docker:stable
+    retry: 
+        max: 2
+        when: 
+            - always
+    tags: 
+        - dependency_scanning
+    stage: Testing
+    variables:
+        DOCKER_DRIVER: overlay2
+    allow_failure: true
+    services:
+        - docker:stable-dind
+    script:
+        - export DS_VERSION=${SP_VERSION:-$(echo "$CI_SERVER_VERSION" | sed 's/^\([0-9]*\)\.\([0-9]*\).*/\1-\2-stable/')}
+        - |
+            docker run \
+            --env DS_ANALYZER_IMAGES \
+            --env DS_ANALYZER_IMAGE_PREFIX \
+            --env DS_ANALYZER_IMAGE_TAG \
+            --env DS_DEFAULT_ANALYZERS \
+            --env DEP_SCAN_DISABLE_REMOTE_CHECKS \
+            --env DS_DOCKER_CLIENT_NEGOTIATION_TIMEOUT \
+            --env DS_PULL_ANALYZER_IMAGE_TIMEOUT \
+            --env DS_RUN_ANALYZER_TIMEOUT \
+            --volume "$PWD:/code" \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            "registry.gitlab.com/gitlab-org/security-products/dependency-scanning:$DS_VERSION" /code
+    dependencies: []
+    artifacts:
+        reports:
+            dependency_scanning: gl-dependency-scanning-report.json
+
+
+
+#-------------------------------------------------------------Nmap Scanning------------------------------------------------------------------------------        
+# Scans the container with an nmap pointed at itself
+
+# What this job does (run inside of container with the docker run command):
+#       1) Runs an update and upgrade with apt-get
+#       2) Installs nmap to the container ("y" piped into the command to automatically proceed with installation)
+#       3) Passes the output of hostname -i (the ip address of the container) to nmap -sC -A -v [IP ADDRESS] 
+#                                                                                   -sC = Use default scripts
+#                                                                                   -A = Use OS & service detection
+#                                                                                   -v = increase verbosity level
+#	    4) Adds results to a txt file for passing to report stage  
+
+nmap_scaning:
+    stage: Testing
+    retry: 
+        max: 2
+        when: 
+            - always
+    allow_failure: true
+    tags:
+        - nmap
+    script:
+        - BLUE='\033[1;34m'
+        - PURPLE='\033[1;35m'
+        - BANNER2="${PURPLE}[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[ End Nmap Output ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n"
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Enumerating with Nmap [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker images
+        - touch nmap_Results.txt
+        - docker run $TAGGED_IMAGE sh -c "yes | apt-get update && yes | apt-get upgrade && yes | apt-get install nmap && hostname -i | xargs nmap -sC -A -v" | tee nmap_Results.txt
+        - echo -e $BANNER2
+    artifacts:
+        paths:
+            - nmap_Results.txt
+
+
+
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#------------------------------------------------------------------CLEANUP--------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# Since containers are very temporary (only active for testing), it is important to stop running containers that are started by the testing stage, as
+#	well as delete the temporary image created for this pipeline (does not impact original image pulled, or the dockerfile that the image was 
+#	made from). For example, I have an image for a web app on a docker container. This pipeline makes a COPY of that image to perform tests on. 
+#	After the pipeline completes, the COPY is deleted, not the original. 
+#
+
+#----------------------------------------------------------Cleanup------------------------------------------------------------------------------- 
+# What this job does: 
+#		1) Lists docker images 
+#		2) Searches for images named container-scan (remember that the COPY will be named container-scan, not the original), then removes them 
+#		3) Searched for images named <none>, this removes duplicate images and empty ones 
+#		4) Uses docker rm to remove stopped containers 
+#		5) Displays images again 
+
+cleanup:
+    stage: Cleanup
+    tags: 
+        - cleanup
+    script:
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Removing Temporary Docker Image(s) & Container(s) [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - docker images
+        - docker images -a | grep "jupyter-scan" | awk '{print $3}' | xargs docker rmi -f
+        - docker images -a | grep "<none>" | awk '{print $3}' | xargs docker rmi -f || true
+        - docker container rm $(docker container ls -q -f 'status=exited' -f 'exited=0')
+        - echo "Image(s) removed"
+        - docker images
+        
+        
+   
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+#=========================================================================================================================================================    
+#-----------------------------------------------------------------REPORT----------------------------------------------------------------------------------
+#========================================================================================================================================================= 
+#/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+# The report stage creates a report from the artifacts from previous jobs/stages. 
+
+#----------------------------------------------------------Report-------------------------------------------------------------------------------        
+# Combines the results of all jobs into one report        
+
+report:
+    stage: Report
+    tags:
+        - nmap
+    retry: 
+        max: 2
+        when: 
+            - always
+    script:
+        - sudo -s | echo $PASSWORD | tee > /dev/null
+        - BLUE='\033[1;34m'
+        - echo -e "\n\n\n${BLUE}[][][][][][][][][][][][][][][][][][][][][][] Generating Report [][][][][][][][][][][][][][][][][][][][][][]\n\n\n"
+        - touch pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" > pipeline_Report.txt
+        - echo "|||||||||||||||||||||||||||||||||||||||||||||||| Jupyter Scan Results |||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+        - echo "Report generated on " >> pipeline_Report.txt
+        - echo `date` >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo " " >> pipeline_Report.txt 
+        - echo "<<<<<<<<<<--------------- Nmap Results ---------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat nmap_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<------------ DAST Results ------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat dast_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo " " >> pipeline_Report.txt
+        - echo "<<<<<<<<<<------------ SAST Results ------------->>>>>>>>>>" >> pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt
+        - cat sast_Results.txt | tee -a pipeline_Report.txt
+        - echo " " >> pipeline_Report.txt 
+        - echo " " >> pipeline_Report.txt
+        - echo "╔-----------------------------------------------------------------------------------------------------------------------╗" >> pipeline_Report.txt
+        - echo "||||||||||||||||||||||||||||||||||||||||||||||||||||| End of Results ||||||||||||||||||||||||||||||||||||||||||||||||||||" >> pipeline_Report.txt
+        - echo "╚ ----------------------------------------------------------------------------------------------------------------------╝" >> pipeline_Report.txt
+# This part removes lines that would clog up the report with redundant information
+        - sed -i '/syntax error while parsing AST from file/d' pipeline_Report.txt
+        - sed -i '/Reading database/d' pipeline_Report.txt
+        - sed -i '/Preparing to unpack/d' pipeline_Report.txt
+        - sed -i '/Unpacking /d' pipeline_Report.txt
+        - sed -i '/Setting up /d' pipeline_Report.txt
+        - sed -i '/security.ubuntu.com/d' pipeline_Report.txt
+        - sed -i '/archive.ubuntu.com/d' pipeline_Report.txt
+        - mv pipeline_Report.txt Jupyter-Scan_Pipeline_Report.txt 
+    artifacts:
+        paths:
+            - Jupyter-Scan_Pipeline_Report.txt
+

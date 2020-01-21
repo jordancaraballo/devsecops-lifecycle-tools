@@ -1,0 +1,156 @@
+{# templates/list.html #}
+{% load render_table from django_tables2 %}
+{% load static %}
+<!doctype html>
+<html>
+    <head>
+        <link rel="stylesheet" href="{% static 'css/base.css' %}">
+        <link rel="stylesheet" href="{% static 'css/vendor.css' %}">
+        <link rel="stylesheet" href="{% static 'css/main.css' %}">
+    </head>
+    <body>
+      <a class="sidelinks" href="/"> Main Website</a>
+      <a class="sidelinks"> | Reports from Database Models</a>
+      <ul class="sidelinks">
+          <li><a class="smoothscroll" title="manufacturer" href="#manufacturer">Manufacturer Table</a></li>
+          <li><a class="smoothscroll" title="brand"        href="#brand">Brand Table</a></li>
+          <li><a class="smoothscroll" title="model"        href="#model">Model Table</a></li>
+          <li><a class="smoothscroll" title="report1"      href="#report1">Report #1: Number of Manufacturers per State</a></li>
+          <li><a class="smoothscroll" title="report2"      href="#report2">Report #2: Manufacturers Accounts per State</a></li>
+          <li><a class="smoothscroll" title="report3"      href="#report3">Report #3: Number of Models per Brand</a></li>
+          <li><a class="smoothscroll" title="report4"      href="#report4">Report #4: Number of Brands per Company</a></li>
+          <li><a class="smoothscroll" title="report5"      href="#report5">Report #5: Prices per Model</a></li>
+          <li><a class="smoothscroll" title="report5"      href="#report6">Report #6: Total Sale Earnings per Brand</a></li>
+
+
+      </ul> <!-- end home-sidelinks -->
+
+      <!-- about
+      ================================================== -->
+      <div id='manufacturer'>
+        {% render_table ismanufacturer %}
+      </div>
+
+      <div id='brand'>
+        {% render_table isbrand %}
+      </div>
+
+      <div id='model'>
+        {% render_table ismodel %}
+      </div>
+
+      <div id='report1' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Number of Manufacturers per State </p>
+        <table>
+            <tr>
+                <th class="smoothscroll">State</th>
+                <th class="smoothscroll">Number of Manufacturers</th>
+            </tr>
+            {% for item in isreport1 %}
+            <tr>
+                <td>{{ item.MAN_STATE }}</td>
+                <td>{{ item.MAN_STATE__count }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+      </a>
+      </div>
+
+      <div id='report2' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Manufacturers Accounts per State </p>
+        <table>
+            <tr>
+                <th>State</th>
+                <th>Account Number</th>
+            </tr>
+            {% for item in isreport2 %}
+            <tr>
+                <td>{{ item.MAN_STATE }}</td>
+                <td>{{ item.MAN_ACCNUM }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        </a>
+      </div>
+
+      <div id='report3' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Number of Models per Brand </p>
+        <table>
+            <tr>
+                <th>Brand Name</th>
+                <th>Number of Models</th>
+            </tr>
+            {% for item in isreport3 %}
+            <tr>
+                <td>{{ item.BRAND_NAME }}</td>
+                <td>{{ item.BRAND_NAME__count }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        </a>
+      </div>
+
+      <div id='report4' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Number of Brands per Company </p>
+        <table>
+            <tr>
+                <th>Company Name</th>
+                <th>Number of Brands</th>
+            </tr>
+            {% for item in isreport4 %}
+            <tr>
+                <td>{{ item.MAN_COMPANY }}</td>
+                <td>{{ item.MAN_COMPANY__count }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        </a>
+      </div>
+
+      <div id='report5' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Prices per Model </p>
+        <table>
+            <tr>
+                <th>Brand Name</th>
+                <th>Brand Level</th>
+                <th>Model Number</num>
+                <th>Model Retail Price</num>
+            </tr>
+            {% for item in isreport5 %}
+            <tr>
+                <td>{{ item.BRAND_NAME }}</td>
+                <td>{{ item.BRAND_LEVEL }}</td>
+                <td>{{ item.model__MODEL_NUM }}</td>
+                <td>{{ item.model__MODEL_HWRP }}</td>
+
+            </tr>
+            {% endfor %}
+        </table>
+        </a>
+      </div>
+
+      <div id='report6' class="sidelinks">
+        <a class="smoothscroll">
+        <p> Total Sale Earnings per Brand </p>
+        <table>
+            <tr>
+                <th>Brand Name</th>
+                <th>Earnings</th>
+            </tr>
+            {% for item in isreport6 %}
+            <tr>
+                <td>{{ item.BRAND_NAME }}</td>
+                <td>{{ item.model__MODEL_HWRP__sum }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        </a>
+      </div>
+
+    </body>
+</html>
